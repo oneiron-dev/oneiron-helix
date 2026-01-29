@@ -708,6 +708,8 @@ pub enum StartNode {
         ids: Option<Vec<IdType>>,
     },
     SearchVector(SearchVector),
+    SearchHybrid(SearchHybrid),
+    PPR(PPR),
     Identifier(String),
     Anonymous,
 }

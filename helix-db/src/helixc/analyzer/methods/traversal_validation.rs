@@ -3,7 +3,7 @@ use crate::helixc::analyzer::utils::{
     DEFAULT_VAR_NAME, VariableInfo, check_identifier_is_fieldtype,
 };
 use crate::helixc::generator::bool_ops::{Contains, IsIn, PropertyEq, PropertyNeq};
-use crate::helixc::generator::source_steps::{SearchVector, VFromID, VFromType};
+use crate::helixc::generator::source_steps::{PPR as GeneratedPPR, SearchHybrid as GeneratedSearchHybrid, SearchVector, VFromID, VFromType};
 use crate::helixc::generator::traversal_steps::{AggregateBy, GroupBy};
 use crate::helixc::generator::utils::{EmbedData, VecData};
 use crate::{
@@ -707,6 +707,383 @@ pub(crate) fn validate_traversal<'a>(
             }));
             // Search returns nodes that contain the vectors
             Type::Vectors(sv.vector_type.clone())
+        }
+        StartNode::SearchHybrid(sh) => {
+            if let Some(ref ty) = sh.vector_type
+                && !ctx.vector_set.contains(ty.as_str())
+            {
+                generate_error!(ctx, original_query, sh.loc.clone(), E103, ty.as_str());
+            }
+
+            let vec: VecData = match &sh.vec_data {
+                Some(VectorData::Vector(v)) => {
+                    VecData::Standard(GeneratedValue::Literal(GenRef::Ref(format!(
+                        "[{}]",
+                        v.iter()
+                            .map(|f| f.to_string())
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    ))))
+                }
+                Some(VectorData::Identifier(i)) => {
+                    is_valid_identifier(ctx, original_query, sh.loc.clone(), i.as_str());
+                    type_in_scope(ctx, original_query, sh.loc.clone(), scope, i.as_str());
+                    VecData::Standard(gen_identifier_or_param(
+                        original_query,
+                        i.as_str(),
+                        true,
+                        false,
+                    ))
+                }
+                Some(VectorData::Embed(e)) => {
+                    let embed_data = match &e.value {
+                        EvaluatesToString::Identifier(i) => {
+                            type_in_scope(ctx, original_query, sh.loc.clone(), scope, i.as_str());
+                            EmbedData {
+                                data: gen_identifier_or_param(
+                                    original_query,
+                                    i.as_str(),
+                                    true,
+                                    false,
+                                ),
+                                model_name: gen_query.embedding_model_to_use.clone(),
+                            }
+                        }
+                        EvaluatesToString::StringLiteral(s) => EmbedData {
+                            data: GeneratedValue::Literal(GenRef::Ref(s.clone())),
+                            model_name: gen_query.embedding_model_to_use.clone(),
+                        },
+                    };
+                    VecData::Hoisted(gen_query.add_hoisted_embed(embed_data))
+                }
+                None => {
+                    generate_error!(
+                        ctx,
+                        original_query,
+                        sh.loc.clone(),
+                        E305,
+                        ["vector_data", "SearchHybrid"],
+                        ["vector_data"]
+                    );
+                    VecData::Unknown
+                }
+            };
+
+            let text_query: GeneratedValue = match &sh.text_query {
+                Some(ValueType::Literal { value, loc: _ }) => {
+                    GeneratedValue::Literal(GenRef::Std(value.inner_stringify()))
+                }
+                Some(ValueType::Identifier { value, loc: _ }) => {
+                    is_valid_identifier(ctx, original_query, sh.loc.clone(), value.as_str());
+                    type_in_scope(ctx, original_query, sh.loc.clone(), scope, value.as_str());
+                    gen_identifier_or_param(original_query, value.as_str(), false, false)
+                }
+                Some(_) => {
+                    generate_error!(
+                        ctx,
+                        original_query,
+                        sh.loc.clone(),
+                        E305,
+                        ["text_query", "SearchHybrid"],
+                        ["text_query"]
+                    );
+                    GeneratedValue::Unknown
+                }
+                None => {
+                    generate_error!(
+                        ctx,
+                        original_query,
+                        sh.loc.clone(),
+                        E305,
+                        ["text_query", "SearchHybrid"],
+                        ["text_query"]
+                    );
+                    GeneratedValue::Unknown
+                }
+            };
+
+            let k = match &sh.k {
+                Some(k) => match &k.value {
+                    EvaluatesToNumberType::I8(i) => {
+                        GeneratedValue::Primitive(GenRef::Std(i.to_string()))
+                    }
+                    EvaluatesToNumberType::I16(i) => {
+                        GeneratedValue::Primitive(GenRef::Std(i.to_string()))
+                    }
+                    EvaluatesToNumberType::I32(i) => {
+                        GeneratedValue::Primitive(GenRef::Std(i.to_string()))
+                    }
+                    EvaluatesToNumberType::I64(i) => {
+                        GeneratedValue::Primitive(GenRef::Std(i.to_string()))
+                    }
+                    EvaluatesToNumberType::U8(i) => {
+                        GeneratedValue::Primitive(GenRef::Std(i.to_string()))
+                    }
+                    EvaluatesToNumberType::U16(i) => {
+                        GeneratedValue::Primitive(GenRef::Std(i.to_string()))
+                    }
+                    EvaluatesToNumberType::U32(i) => {
+                        GeneratedValue::Primitive(GenRef::Std(i.to_string()))
+                    }
+                    EvaluatesToNumberType::U64(i) => {
+                        GeneratedValue::Primitive(GenRef::Std(i.to_string()))
+                    }
+                    EvaluatesToNumberType::U128(i) => {
+                        GeneratedValue::Primitive(GenRef::Std(i.to_string()))
+                    }
+                    EvaluatesToNumberType::Identifier(i) => {
+                        is_valid_identifier(ctx, original_query, sh.loc.clone(), i.as_str());
+                        type_in_scope(ctx, original_query, sh.loc.clone(), scope, i.as_str());
+                        gen_identifier_or_param(original_query, i, false, false)
+                    }
+                    _ => {
+                        generate_error!(
+                            ctx,
+                            original_query,
+                            sh.loc.clone(),
+                            E305,
+                            ["k", "SearchHybrid"],
+                            ["k"]
+                        );
+                        GeneratedValue::Unknown
+                    }
+                },
+                None => {
+                    generate_error!(ctx, original_query, sh.loc.clone(), E601, &sh.loc.span);
+                    GeneratedValue::Unknown
+                }
+            };
+
+            let pre_filter: Option<Vec<BoExp>> = match &sh.pre_filter {
+                Some(expr) => {
+                    let (_, stmt) = infer_expr_type(
+                        ctx,
+                        expr,
+                        scope,
+                        original_query,
+                        Some(Type::Vector(sh.vector_type.clone())),
+                        gen_query,
+                    );
+                    if stmt.is_none() {
+                        return None;
+                    }
+                    let stmt = stmt.unwrap();
+                    let mut pre_filter_traversal = GeneratedTraversal {
+                        traversal_type: TraversalType::FromIter(GenRef::Std("v".to_string())),
+                        steps: vec![],
+                        should_collect: ShouldCollect::ToVec,
+                        source_step: Separator::Empty(SourceStep::Anonymous),
+                        ..Default::default()
+                    };
+                    match stmt {
+                        GeneratedStatement::Traversal(tr) => {
+                            pre_filter_traversal
+                                .steps
+                                .push(Separator::Period(GeneratedStep::Where(Where::Ref(
+                                    WhereRef {
+                                        expr: BoExp::Expr(tr),
+                                    },
+                                ))));
+                        }
+                        GeneratedStatement::BoExp(expr) => {
+                            pre_filter_traversal
+                                .steps
+                                .push(Separator::Period(GeneratedStep::Where(match expr {
+                                    BoExp::Exists(mut traversal) => {
+                                        traversal.should_collect = ShouldCollect::No;
+                                        Where::Ref(WhereRef {
+                                            expr: BoExp::Exists(traversal),
+                                        })
+                                    }
+                                    _ => Where::Ref(WhereRef { expr }),
+                                })));
+                        }
+                        _ => {
+                            return None;
+                        }
+                    }
+                    Some(vec![BoExp::Expr(pre_filter_traversal)])
+                }
+                None => None,
+            };
+
+            let label = match &sh.vector_type {
+                Some(vt) => GenRef::Literal(vt.clone()),
+                None => {
+                    generate_error!(
+                        ctx,
+                        original_query,
+                        sh.loc.clone(),
+                        E601,
+                        "search hybrid requires vector_type"
+                    );
+                    return None;
+                }
+            };
+
+            gen_traversal.traversal_type = TraversalType::Standalone;
+            gen_traversal.should_collect = ShouldCollect::No;
+            gen_traversal.source_step = Separator::Empty(SourceStep::SearchHybrid(
+                GeneratedSearchHybrid {
+                    label,
+                    vec,
+                    text_query,
+                    k,
+                    pre_filter,
+                },
+            ));
+
+            Type::Vectors(sh.vector_type.clone())
+        }
+        StartNode::PPR(ppr) => {
+            if let Some(ref ty) = ppr.node_type
+                && !ctx.node_set.contains(ty.as_str())
+            {
+                generate_error!(ctx, original_query, ppr.loc.clone(), E101, ty.as_str());
+            }
+
+            let node_type = GenRef::Literal(ppr.node_type.clone().unwrap_or_default());
+
+            let seeds = match &ppr.seeds {
+                Some(s) => {
+                    is_valid_identifier(ctx, original_query, ppr.loc.clone(), s.as_str());
+                    type_in_scope(ctx, original_query, ppr.loc.clone(), scope, s.as_str());
+                    gen_identifier_or_param(original_query, s.as_str(), false, false)
+                }
+                None => {
+                    generate_error!(
+                        ctx,
+                        original_query,
+                        ppr.loc.clone(),
+                        E305,
+                        ["seeds", "PPR"],
+                        ["seeds"]
+                    );
+                    GeneratedValue::Unknown
+                }
+            };
+
+            let universe = match &ppr.universe {
+                Some(u) => {
+                    is_valid_identifier(ctx, original_query, ppr.loc.clone(), u.as_str());
+                    type_in_scope(ctx, original_query, ppr.loc.clone(), scope, u.as_str());
+                    gen_identifier_or_param(original_query, u.as_str(), false, false)
+                }
+                None => {
+                    generate_error!(
+                        ctx,
+                        original_query,
+                        ppr.loc.clone(),
+                        E305,
+                        ["universe", "PPR"],
+                        ["universe"]
+                    );
+                    GeneratedValue::Unknown
+                }
+            };
+
+            let depth = ppr.depth.as_ref().map(|d| match &d.value {
+                EvaluatesToNumberType::I8(i) => {
+                    GeneratedValue::Primitive(GenRef::Std(i.to_string()))
+                }
+                EvaluatesToNumberType::I16(i) => {
+                    GeneratedValue::Primitive(GenRef::Std(i.to_string()))
+                }
+                EvaluatesToNumberType::I32(i) => {
+                    GeneratedValue::Primitive(GenRef::Std(i.to_string()))
+                }
+                EvaluatesToNumberType::I64(i) => {
+                    GeneratedValue::Primitive(GenRef::Std(i.to_string()))
+                }
+                EvaluatesToNumberType::U8(i) => {
+                    GeneratedValue::Primitive(GenRef::Std(i.to_string()))
+                }
+                EvaluatesToNumberType::U16(i) => {
+                    GeneratedValue::Primitive(GenRef::Std(i.to_string()))
+                }
+                EvaluatesToNumberType::U32(i) => {
+                    GeneratedValue::Primitive(GenRef::Std(i.to_string()))
+                }
+                EvaluatesToNumberType::U64(i) => {
+                    GeneratedValue::Primitive(GenRef::Std(i.to_string()))
+                }
+                EvaluatesToNumberType::U128(i) => {
+                    GeneratedValue::Primitive(GenRef::Std(i.to_string()))
+                }
+                EvaluatesToNumberType::Identifier(i) => {
+                    is_valid_identifier(ctx, original_query, ppr.loc.clone(), i.as_str());
+                    type_in_scope(ctx, original_query, ppr.loc.clone(), scope, i.as_str());
+                    gen_identifier_or_param(original_query, i, false, false)
+                }
+                _ => GeneratedValue::Unknown,
+            });
+
+            let damping = ppr.damping.as_ref().map(|d| match &d.value {
+                EvaluatesToNumberType::F32(f) => {
+                    GeneratedValue::Primitive(GenRef::Std(f.to_string()))
+                }
+                EvaluatesToNumberType::F64(f) => {
+                    GeneratedValue::Primitive(GenRef::Std(f.to_string()))
+                }
+                EvaluatesToNumberType::Identifier(i) => {
+                    is_valid_identifier(ctx, original_query, ppr.loc.clone(), i.as_str());
+                    type_in_scope(ctx, original_query, ppr.loc.clone(), scope, i.as_str());
+                    gen_identifier_or_param(original_query, i, false, false)
+                }
+                _ => GeneratedValue::Unknown,
+            });
+
+            let limit = match &ppr.limit {
+                Some(l) => match &l.value {
+                    EvaluatesToNumberType::I8(i) => {
+                        GeneratedValue::Primitive(GenRef::Std(i.to_string()))
+                    }
+                    EvaluatesToNumberType::I16(i) => {
+                        GeneratedValue::Primitive(GenRef::Std(i.to_string()))
+                    }
+                    EvaluatesToNumberType::I32(i) => {
+                        GeneratedValue::Primitive(GenRef::Std(i.to_string()))
+                    }
+                    EvaluatesToNumberType::I64(i) => {
+                        GeneratedValue::Primitive(GenRef::Std(i.to_string()))
+                    }
+                    EvaluatesToNumberType::U8(i) => {
+                        GeneratedValue::Primitive(GenRef::Std(i.to_string()))
+                    }
+                    EvaluatesToNumberType::U16(i) => {
+                        GeneratedValue::Primitive(GenRef::Std(i.to_string()))
+                    }
+                    EvaluatesToNumberType::U32(i) => {
+                        GeneratedValue::Primitive(GenRef::Std(i.to_string()))
+                    }
+                    EvaluatesToNumberType::U64(i) => {
+                        GeneratedValue::Primitive(GenRef::Std(i.to_string()))
+                    }
+                    EvaluatesToNumberType::U128(i) => {
+                        GeneratedValue::Primitive(GenRef::Std(i.to_string()))
+                    }
+                    EvaluatesToNumberType::Identifier(i) => {
+                        is_valid_identifier(ctx, original_query, ppr.loc.clone(), i.as_str());
+                        type_in_scope(ctx, original_query, ppr.loc.clone(), scope, i.as_str());
+                        gen_identifier_or_param(original_query, i, false, false)
+                    }
+                    _ => GeneratedValue::Unknown,
+                },
+                None => GeneratedValue::Primitive(GenRef::Std("10".to_string())),
+            };
+
+            gen_traversal.traversal_type = TraversalType::Standalone;
+            gen_traversal.should_collect = ShouldCollect::No;
+            gen_traversal.source_step = Separator::Empty(SourceStep::PPR(GeneratedPPR {
+                node_type,
+                seeds: GenRef::Std(format!("{seeds}")),
+                universe: GenRef::Std(format!("{universe}")),
+                depth,
+                damping,
+                limit,
+            }));
+
+            Type::Nodes(ppr.node_type.clone())
         }
     };
 

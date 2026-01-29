@@ -509,16 +509,17 @@ impl Display for SearchHybrid {
         )?;
         write!(
             f,
-            "        .search_bm25({}, {}, {})?;\n",
+            "        .search_bm25({}, &{}, {})?\n",
             self.label, self.text_query, self.k
         )?;
+        write!(f, "        .collect::<Result<Vec<_>, _>>()?;\n")?;
         write!(f, "    RRFReranker::fuse_lists(\n")?;
         write!(
             f,
             "        vec![__hybrid_vec_results.into_iter(), __hybrid_bm25_results.into_iter()],\n"
         )?;
         write!(f, "        60.0\n")?;
-        write!(f, "    )?\n")?;
+        write!(f, "    ).map_err(|e| GraphError::from(e.to_string()))?\n")?;
         write!(f, "}}")
     }
 }
@@ -543,11 +544,25 @@ impl Display for PPR {
             Some(d) => format!("{d}"),
             None => "0.85".to_string(),
         };
-        write!(
-            f,
-            "crate::helix_engine::graph::ppr::ppr(&{}, &{}, &std::collections::HashMap::new(), {}, {}, {})",
-            self.universe, self.seeds, depth, damping, self.limit
-        )
+        write!(f, "{{\n")?;
+        write!(f, "    use helix_db::helix_engine::storage_core::storage_methods::StorageMethods;\n")?;
+        write!(f, "    let ppr_universe: std::collections::HashSet<u128> = {}.iter().map(|id| **id).collect();\n", self.universe)?;
+        write!(f, "    let ppr_seeds: Vec<u128> = {}.iter().map(|id| **id).collect();\n", self.seeds)?;
+        write!(f, "    let ppr_results = helix_db::helix_engine::graph::ppr::ppr_with_storage(\n")?;
+        write!(f, "        &db,\n")?;
+        write!(f, "        &txn,\n")?;
+        write!(f, "        &arena,\n")?;
+        write!(f, "        &ppr_universe,\n")?;
+        write!(f, "        &ppr_seeds,\n")?;
+        write!(f, "        &std::collections::HashMap::new(),\n")?;
+        write!(f, "        {} as usize,\n", depth)?;
+        write!(f, "        {},\n", damping)?;
+        write!(f, "        {} as usize,\n", self.limit)?;
+        write!(f, "    );\n")?;
+        write!(f, "    ppr_results.into_iter().filter_map(|(node_id, _score)| {{\n")?;
+        write!(f, "        db.get_node(&txn, &node_id, &arena).ok().map(TraversalValue::Node)\n")?;
+        write!(f, "    }}).collect::<Vec<_>>()\n")?;
+        write!(f, "}}")
     }
 }
 

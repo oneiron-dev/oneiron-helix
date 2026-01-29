@@ -5,7 +5,7 @@ use crate::{
         types::{
             Assignment, BM25Search, Embed, EvaluatesToNumber, EvaluatesToNumberType,
             EvaluatesToString, ExistsExpression, Expression, ExpressionType, ForLoop, ForLoopVars,
-            MathFunction, MathFunctionCall, PPR, SearchVector, ValueType, VectorData,
+            MathFunction, MathFunctionCall, PPR, SearchHybrid, SearchVector, ValueType, VectorData,
         },
         utils::{PairTools, PairsTools},
     },
@@ -137,7 +137,7 @@ impl HelixParser {
             }),
             Rule::search_hybrid => Ok(Expression {
                 loc: pair.loc(),
-                expr: ExpressionType::SearchHybrid(self.parse_search_vector(pair)?.into()),
+                expr: ExpressionType::SearchHybrid(self.parse_search_hybrid(pair)?),
             }),
             Rule::ppr => Ok(Expression {
                 loc: pair.loc(),
@@ -521,6 +521,116 @@ impl HelixParser {
         })
     }
 
+    pub(super) fn parse_search_hybrid(
+        &self,
+        pair: Pair<Rule>,
+    ) -> Result<SearchHybrid, ParserError> {
+        let mut vector_type = None;
+        let mut vec_data = None;
+        let mut text_query: Option<ValueType> = None;
+        let mut k: Option<EvaluatesToNumber> = None;
+        let mut pre_filter = None;
+
+        for p in pair.clone().into_inner() {
+            match p.as_rule() {
+                Rule::identifier_upper => {
+                    vector_type = Some(p.as_str().to_string());
+                }
+                Rule::vector_data => {
+                    let vector_data = p.clone().try_inner_next()?;
+                    match vector_data.as_rule() {
+                        Rule::identifier => {
+                            vec_data = Some(VectorData::Identifier(p.as_str().to_string()));
+                        }
+                        Rule::vec_literal => {
+                            vec_data = Some(VectorData::Vector(self.parse_vec_literal(p)?));
+                        }
+                        Rule::embed_method => {
+                            let loc = vector_data.loc();
+                            let inner = vector_data.try_inner_next()?;
+                            vec_data = Some(VectorData::Embed(Embed {
+                                loc,
+                                value: match inner.as_rule() {
+                                    Rule::identifier => {
+                                        EvaluatesToString::Identifier(inner.as_str().to_string())
+                                    }
+                                    Rule::string_literal => {
+                                        EvaluatesToString::StringLiteral(inner.as_str().to_string())
+                                    }
+                                    _ => {
+                                        return Err(ParserError::from(format!(
+                                            "Unexpected rule in SearchHybrid: {:?} => {:?}",
+                                            inner.as_rule(),
+                                            inner,
+                                        )));
+                                    }
+                                },
+                            }));
+                        }
+                        _ => {
+                            return Err(ParserError::from(format!(
+                                "Unexpected rule in SearchHybrid vector_data: {:?} => {:?}",
+                                vector_data.as_rule(),
+                                vector_data,
+                            )));
+                        }
+                    }
+                }
+                Rule::string_literal => {
+                    if text_query.is_none() {
+                        text_query = Some(ValueType::Literal {
+                            value: Value::String(p.as_str().to_string()),
+                            loc: p.loc(),
+                        });
+                    }
+                }
+                Rule::identifier => {
+                    if text_query.is_none() {
+                        text_query = Some(ValueType::Identifier {
+                            value: p.as_str().to_string(),
+                            loc: p.loc(),
+                        });
+                    } else if k.is_none() {
+                        k = Some(EvaluatesToNumber {
+                            loc: p.loc(),
+                            value: EvaluatesToNumberType::Identifier(p.as_str().to_string()),
+                        });
+                    }
+                }
+                Rule::integer => {
+                    k = Some(EvaluatesToNumber {
+                        loc: p.loc(),
+                        value: EvaluatesToNumberType::I32(
+                            p.as_str()
+                                .to_string()
+                                .parse::<i32>()
+                                .map_err(|_| ParserError::from("Invalid integer value"))?,
+                        ),
+                    });
+                }
+                Rule::pre_filter => {
+                    pre_filter = Some(Box::new(self.parse_expression(p)?));
+                }
+                _ => {
+                    return Err(ParserError::from(format!(
+                        "Unexpected rule in SearchHybrid: {:?} => {:?}",
+                        p.as_rule(),
+                        p,
+                    )));
+                }
+            }
+        }
+
+        Ok(SearchHybrid {
+            loc: pair.loc(),
+            vector_type,
+            vec_data,
+            text_query,
+            k,
+            pre_filter,
+        })
+    }
+
     pub(super) fn parse_ppr(&self, pair: Pair<Rule>) -> Result<PPR, ParserError> {
         let mut node_type = None;
         let mut seeds = None;
@@ -539,62 +649,79 @@ impl HelixParser {
                         match arg.as_rule() {
                             Rule::identifier => {
                                 let key = arg.as_str().to_string();
-                                if key == "seeds"
-                                    || key == "universe"
-                                    || key == "depth"
-                                    || key == "damping"
-                                    || key == "limit"
-                                {
-                                    continue;
-                                }
                                 if seeds.is_none() {
                                     seeds = Some(key);
                                 } else if universe.is_none() {
                                     universe = Some(key);
-                                } else if depth.is_none() {
-                                    depth = Some(EvaluatesToNumber {
-                                        loc: arg.loc(),
-                                        value: EvaluatesToNumberType::Identifier(key),
-                                    });
-                                } else if damping.is_none() {
-                                    damping = Some(EvaluatesToNumber {
-                                        loc: arg.loc(),
-                                        value: EvaluatesToNumberType::Identifier(key),
-                                    });
-                                } else if limit.is_none() {
-                                    limit = Some(EvaluatesToNumber {
-                                        loc: arg.loc(),
-                                        value: EvaluatesToNumberType::Identifier(key),
-                                    });
                                 }
                             }
-                            Rule::integer => {
-                                let val = arg
-                                    .as_str()
-                                    .parse::<i32>()
-                                    .map_err(|_| ParserError::from("Invalid integer value"))?;
-                                if depth.is_none() {
-                                    depth = Some(EvaluatesToNumber {
-                                        loc: arg.loc(),
-                                        value: EvaluatesToNumberType::I32(val),
-                                    });
-                                } else if limit.is_none() {
-                                    limit = Some(EvaluatesToNumber {
-                                        loc: arg.loc(),
-                                        value: EvaluatesToNumberType::I32(val),
-                                    });
+                            Rule::ppr_depth => {
+                                for inner in arg.into_inner() {
+                                    match inner.as_rule() {
+                                        Rule::integer => {
+                                            let val = inner
+                                                .as_str()
+                                                .parse::<i32>()
+                                                .map_err(|_| ParserError::from("Invalid integer value"))?;
+                                            depth = Some(EvaluatesToNumber {
+                                                loc: inner.loc(),
+                                                value: EvaluatesToNumberType::I32(val),
+                                            });
+                                        }
+                                        Rule::identifier => {
+                                            depth = Some(EvaluatesToNumber {
+                                                loc: inner.loc(),
+                                                value: EvaluatesToNumberType::Identifier(inner.as_str().to_string()),
+                                            });
+                                        }
+                                        _ => {}
+                                    }
                                 }
                             }
-                            Rule::float => {
-                                let val = arg
-                                    .as_str()
-                                    .parse::<f64>()
-                                    .map_err(|_| ParserError::from("Invalid float value"))?;
-                                if damping.is_none() {
-                                    damping = Some(EvaluatesToNumber {
-                                        loc: arg.loc(),
-                                        value: EvaluatesToNumberType::F64(val),
-                                    });
+                            Rule::ppr_damping => {
+                                for inner in arg.into_inner() {
+                                    match inner.as_rule() {
+                                        Rule::float => {
+                                            let val = inner
+                                                .as_str()
+                                                .parse::<f64>()
+                                                .map_err(|_| ParserError::from("Invalid float value"))?;
+                                            damping = Some(EvaluatesToNumber {
+                                                loc: inner.loc(),
+                                                value: EvaluatesToNumberType::F64(val),
+                                            });
+                                        }
+                                        Rule::identifier => {
+                                            damping = Some(EvaluatesToNumber {
+                                                loc: inner.loc(),
+                                                value: EvaluatesToNumberType::Identifier(inner.as_str().to_string()),
+                                            });
+                                        }
+                                        _ => {}
+                                    }
+                                }
+                            }
+                            Rule::ppr_limit => {
+                                for inner in arg.into_inner() {
+                                    match inner.as_rule() {
+                                        Rule::integer => {
+                                            let val = inner
+                                                .as_str()
+                                                .parse::<i32>()
+                                                .map_err(|_| ParserError::from("Invalid integer value"))?;
+                                            limit = Some(EvaluatesToNumber {
+                                                loc: inner.loc(),
+                                                value: EvaluatesToNumberType::I32(val),
+                                            });
+                                        }
+                                        Rule::identifier => {
+                                            limit = Some(EvaluatesToNumber {
+                                                loc: inner.loc(),
+                                                value: EvaluatesToNumberType::Identifier(inner.as_str().to_string()),
+                                            });
+                                        }
+                                        _ => {}
+                                    }
                                 }
                             }
                             _ => {}
