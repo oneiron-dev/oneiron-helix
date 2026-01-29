@@ -1,3 +1,5 @@
+use crate::helix_engine::storage_core::{storage_methods::StorageMethods, HelixGraphStorage};
+use heed3::RoTxn;
 use std::collections::{HashMap, HashSet};
 
 /// Edge weights for Oneiron PPR propagation
@@ -148,6 +150,108 @@ pub fn ppr(
     result
 }
 
+/// Local PPR with candidate-set gating and full storage access for neighbor iteration
+///
+/// This is the full implementation of Personalized PageRank that iterates through
+/// the graph using storage access to get outgoing edges.
+///
+/// # Arguments
+/// * `storage` - Reference to the HelixGraphStorage for edge/node access
+/// * `txn` - Read-only transaction for database access
+/// * `arena` - Bumpalo arena for temporary allocations
+/// * `universe_ids` - Set of node IDs that form the candidate set (both endpoints must be readable)
+/// * `seed_ids` - Starting nodes for PPR propagation
+/// * `edge_weights` - Map of edge label to weight (overrides EDGE_WEIGHTS constant)
+/// * `max_depth` - Maximum number of hops from seed nodes
+/// * `damping` - Damping factor (typically 0.85), controls score decay per hop
+/// * `limit` - Maximum number of results to return
+///
+/// # Returns
+/// Vector of (node_id, score) tuples sorted by score descending
+pub fn ppr_with_storage(
+    storage: &HelixGraphStorage,
+    txn: &RoTxn,
+    arena: &bumpalo::Bump,
+    universe_ids: &HashSet<u128>,
+    seed_ids: &[u128],
+    edge_weights: &HashMap<String, f64>,
+    max_depth: usize,
+    damping: f64,
+    limit: usize,
+) -> Vec<(u128, f64)> {
+    if seed_ids.is_empty() {
+        return Vec::new();
+    }
+
+    let mut scores: HashMap<u128, f64> = HashMap::new();
+    let initial_score = 1.0 / seed_ids.len() as f64;
+
+    let mut frontier: HashMap<u128, f64> = HashMap::new();
+    for &seed in seed_ids {
+        if universe_ids.contains(&seed) {
+            *scores.entry(seed).or_insert(0.0) += initial_score;
+            *frontier.entry(seed).or_insert(0.0) += initial_score;
+        }
+    }
+
+    for _depth in 0..max_depth {
+        let mut next_frontier: HashMap<u128, f64> = HashMap::new();
+
+        for (&node_id, &node_score) in &frontier {
+            if node_score < SCORE_THRESHOLD {
+                continue;
+            }
+
+            let out_prefix = node_id.to_be_bytes().to_vec();
+            let iter = match storage.out_edges_db.prefix_iter(txn, &out_prefix) {
+                Ok(iter) => iter,
+                Err(_) => continue,
+            };
+
+            for result in iter {
+                let (_, value) = match result {
+                    Ok((key, value)) => (key, value),
+                    Err(_) => continue,
+                };
+                let (edge_id, target_node) = match HelixGraphStorage::unpack_adj_edge_data(value) {
+                    Ok((edge_id, to_node)) => (edge_id, to_node),
+                    Err(_) => continue,
+                };
+
+                if !universe_ids.contains(&target_node) {
+                    continue;
+                }
+
+                let edge = match storage.get_edge(txn, &edge_id, arena) {
+                    Ok(edge) => edge,
+                    Err(_) => continue,
+                };
+                let edge_label = edge.label;
+
+                let weight = get_edge_weight(edge_label, edge_weights);
+
+                if weight <= 0.0 {
+                    continue;
+                }
+
+                let propagated_score = node_score * weight * damping;
+                *scores.entry(target_node).or_insert(0.0) += propagated_score;
+                *next_frontier.entry(target_node).or_insert(0.0) += propagated_score;
+            }
+        }
+
+        if next_frontier.is_empty() {
+            break;
+        }
+        frontier = next_frontier;
+    }
+
+    let mut result: Vec<_> = scores.into_iter().collect();
+    result.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+    result.truncate(limit);
+    result
+}
+
 /// Helper function to get edge weight from either user-provided map or EDGE_WEIGHTS constant
 #[inline]
 pub fn get_edge_weight(edge_label: &str, edge_weights: &HashMap<String, f64>) -> f64 {
@@ -265,5 +369,24 @@ mod tests {
             (get_edge_weight("unknown_edge", &edge_weights) - DEFAULT_EDGE_WEIGHT).abs()
                 < f64::EPSILON
         );
+    }
+
+    #[test]
+    fn test_ppr_with_storage_signature_compiles() {
+        fn assert_ppr_with_storage_signature(
+            _f: fn(
+                &HelixGraphStorage,
+                &RoTxn,
+                &bumpalo::Bump,
+                &HashSet<u128>,
+                &[u128],
+                &HashMap<String, f64>,
+                usize,
+                f64,
+                usize,
+            ) -> Vec<(u128, f64)>,
+        ) {
+        }
+        assert_ppr_with_storage_signature(ppr_with_storage);
     }
 }
