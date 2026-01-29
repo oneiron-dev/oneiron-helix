@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::{HashMap, HashSet};
 
 /// Edge weights for Oneiron PPR propagation
 pub const EDGE_WEIGHTS: &[(&str, f64)] = &[
@@ -21,9 +21,9 @@ pub const EDGE_WEIGHTS: &[(&str, f64)] = &[
 pub fn ppr(
     universe_ids: &HashSet<u128>,
     seed_ids: &[u128],
-    edge_weights: &HashMap<String, f64>,
-    max_depth: usize,
-    damping: f64,
+    _edge_weights: &HashMap<String, f64>,
+    _max_depth: usize,
+    _damping: f64,
     limit: usize,
 ) -> Vec<(u128, f64)> {
     let mut scores: HashMap<u128, f64> = HashMap::new();
@@ -35,7 +35,9 @@ pub fn ppr(
         }
     }
 
-    // TODO: Full implementation with neighbor iteration
+    // TODO: Implement neighbor iteration by walking each frontier node's edges,
+    // filter to neighbors where both endpoints are in universe_ids, apply
+    // edge_weights to transition mass with damping, and stop after max_depth.
     // For now, return seeds with scores
     let mut result: Vec<_> = scores.into_iter().collect();
     result.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
