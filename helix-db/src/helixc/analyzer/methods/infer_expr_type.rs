@@ -1557,6 +1557,19 @@ pub(crate) fn infer_expr_type<'a>(
                 })),
             )
         }
+        ExpressionType::PPR(ppr) => {
+            if let Some(ref ty) = ppr.node_type
+                && !ctx.node_set.contains(ty.as_str())
+            {
+                generate_error!(ctx, original_query, ppr.loc.clone(), E101, ty.as_str());
+            }
+            // PPR returns scored nodes based on personalized PageRank
+            // For now, return a placeholder - full implementation needs generator support
+            (
+                Type::Nodes(ppr.node_type.clone()),
+                None, // TODO: Add PPR generator support
+            )
+        }
         And(exprs) => {
             let exprs = exprs
                 .iter()

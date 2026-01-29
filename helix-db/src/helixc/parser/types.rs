@@ -609,6 +609,7 @@ pub enum ExpressionType {
     Or(Vec<Expression>),
     SearchVector(SearchVector),
     SearchHybrid(SearchHybrid),
+    PPR(PPR),
     BM25Search(BM25Search),
     MathFunctionCall(MathFunctionCall),
     Empty,
@@ -641,6 +642,7 @@ impl Debug for ExpressionType {
             ExpressionType::Or(exprs) => write!(f, "Or({exprs:?})"),
             ExpressionType::SearchVector(sv) => write!(f, "SearchVector({sv:?})"),
             ExpressionType::SearchHybrid(sh) => write!(f, "SearchHybrid({sh:?})"),
+            ExpressionType::PPR(ppr) => write!(f, "PPR({ppr:?})"),
             ExpressionType::BM25Search(bm25) => write!(f, "BM25Search({bm25:?})"),
             ExpressionType::MathFunctionCall(mfc) => write!(f, "MathFunctionCall({mfc:?})"),
             ExpressionType::Empty => write!(f, "Empty"),
@@ -666,6 +668,7 @@ impl Display for ExpressionType {
             ExpressionType::Or(exprs) => write!(f, "Or({exprs:?})"),
             ExpressionType::SearchVector(sv) => write!(f, "SearchVector({sv:?})"),
             ExpressionType::SearchHybrid(sh) => write!(f, "SearchHybrid({sh:?})"),
+            ExpressionType::PPR(ppr) => write!(f, "PPR({ppr:?})"),
             ExpressionType::BM25Search(bm25) => write!(f, "BM25Search({bm25:?})"),
             ExpressionType::MathFunctionCall(mfc) => {
                 write!(f, "{}({:?})", mfc.function.name(), mfc.args)
@@ -996,6 +999,17 @@ impl From<SearchVector> for SearchHybrid {
             pre_filter: sv.pre_filter,
         }
     }
+}
+
+#[derive(Debug, Clone)]
+pub struct PPR {
+    pub loc: Loc,
+    pub node_type: Option<String>,
+    pub seeds: Option<String>,
+    pub universe: Option<String>,
+    pub depth: Option<EvaluatesToNumber>,
+    pub damping: Option<EvaluatesToNumber>,
+    pub limit: Option<EvaluatesToNumber>,
 }
 
 #[derive(Debug, Clone)]

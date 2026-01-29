@@ -5,7 +5,7 @@ use crate::{
         types::{
             Assignment, BM25Search, Embed, EvaluatesToNumber, EvaluatesToNumberType,
             EvaluatesToString, ExistsExpression, Expression, ExpressionType, ForLoop, ForLoopVars,
-            MathFunction, MathFunctionCall, SearchVector, ValueType, VectorData,
+            MathFunction, MathFunctionCall, PPR, SearchVector, ValueType, VectorData,
         },
         utils::{PairTools, PairsTools},
     },
@@ -138,6 +138,10 @@ impl HelixParser {
             Rule::search_hybrid => Ok(Expression {
                 loc: pair.loc(),
                 expr: ExpressionType::SearchHybrid(self.parse_search_vector(pair)?.into()),
+            }),
+            Rule::ppr => Ok(Expression {
+                loc: pair.loc(),
+                expr: ExpressionType::PPR(self.parse_ppr(pair)?),
             }),
             Rule::none => Ok(Expression {
                 loc: pair.loc(),
@@ -514,6 +518,107 @@ impl HelixParser {
             data,
             k,
             pre_filter,
+        })
+    }
+
+    pub(super) fn parse_ppr(&self, pair: Pair<Rule>) -> Result<PPR, ParserError> {
+        let mut node_type = None;
+        let mut seeds = None;
+        let mut universe = None;
+        let mut depth: Option<EvaluatesToNumber> = None;
+        let mut damping: Option<EvaluatesToNumber> = None;
+        let mut limit: Option<EvaluatesToNumber> = None;
+
+        for p in pair.clone().into_inner() {
+            match p.as_rule() {
+                Rule::identifier_upper => {
+                    node_type = Some(p.as_str().to_string());
+                }
+                Rule::ppr_args => {
+                    for arg in p.into_inner() {
+                        match arg.as_rule() {
+                            Rule::identifier => {
+                                let key = arg.as_str().to_string();
+                                if key == "seeds"
+                                    || key == "universe"
+                                    || key == "depth"
+                                    || key == "damping"
+                                    || key == "limit"
+                                {
+                                    continue;
+                                }
+                                if seeds.is_none() {
+                                    seeds = Some(key);
+                                } else if universe.is_none() {
+                                    universe = Some(key);
+                                } else if depth.is_none() {
+                                    depth = Some(EvaluatesToNumber {
+                                        loc: arg.loc(),
+                                        value: EvaluatesToNumberType::Identifier(key),
+                                    });
+                                } else if damping.is_none() {
+                                    damping = Some(EvaluatesToNumber {
+                                        loc: arg.loc(),
+                                        value: EvaluatesToNumberType::Identifier(key),
+                                    });
+                                } else if limit.is_none() {
+                                    limit = Some(EvaluatesToNumber {
+                                        loc: arg.loc(),
+                                        value: EvaluatesToNumberType::Identifier(key),
+                                    });
+                                }
+                            }
+                            Rule::integer => {
+                                let val = arg
+                                    .as_str()
+                                    .parse::<i32>()
+                                    .map_err(|_| ParserError::from("Invalid integer value"))?;
+                                if depth.is_none() {
+                                    depth = Some(EvaluatesToNumber {
+                                        loc: arg.loc(),
+                                        value: EvaluatesToNumberType::I32(val),
+                                    });
+                                } else if limit.is_none() {
+                                    limit = Some(EvaluatesToNumber {
+                                        loc: arg.loc(),
+                                        value: EvaluatesToNumberType::I32(val),
+                                    });
+                                }
+                            }
+                            Rule::float => {
+                                let val = arg
+                                    .as_str()
+                                    .parse::<f64>()
+                                    .map_err(|_| ParserError::from("Invalid float value"))?;
+                                if damping.is_none() {
+                                    damping = Some(EvaluatesToNumber {
+                                        loc: arg.loc(),
+                                        value: EvaluatesToNumberType::F64(val),
+                                    });
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+                _ => {
+                    return Err(ParserError::from(format!(
+                        "Unexpected rule in PPR: {:?} => {:?}",
+                        p.as_rule(),
+                        p,
+                    )));
+                }
+            }
+        }
+
+        Ok(PPR {
+            loc: pair.loc(),
+            node_type,
+            seeds,
+            universe,
+            depth,
+            damping,
+            limit,
         })
     }
 
