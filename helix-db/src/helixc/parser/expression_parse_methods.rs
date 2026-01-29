@@ -135,6 +135,10 @@ impl HelixParser {
                 loc: pair.loc(),
                 expr: ExpressionType::SearchVector(self.parse_search_vector(pair)?),
             }),
+            Rule::search_hybrid => Ok(Expression {
+                loc: pair.loc(),
+                expr: ExpressionType::SearchHybrid(self.parse_search_vector(pair)?.into()),
+            }),
             Rule::none => Ok(Expression {
                 loc: pair.loc(),
                 expr: ExpressionType::Empty,

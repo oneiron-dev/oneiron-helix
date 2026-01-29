@@ -985,6 +985,19 @@ pub struct SearchHybrid {
     pub pre_filter: Option<Box<Expression>>,
 }
 
+impl From<SearchVector> for SearchHybrid {
+    fn from(sv: SearchVector) -> Self {
+        SearchHybrid {
+            loc: sv.loc,
+            vector_type: sv.vector_type,
+            vec_data: sv.data,
+            text_query: None,
+            k: sv.k,
+            pre_filter: sv.pre_filter,
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct BM25Search {
     pub loc: Loc,
