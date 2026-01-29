@@ -1,0 +1,26 @@
+{
+  "type": "object",
+  "properties": {
+    "bead_id": { "type": "string" },
+    "status": { "type": "string", "enum": ["success", "failed"] },
+    "summary": { "type": "string" },
+    "files_changed": { "type": "array", "items": { "type": "string" } },
+    "commands_run": { "type": "array", "items": { "type": "string" } },
+    "tests_run": { "type": "array", "items": { "type": "string" } },
+    "acceptance_checks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "check": { "type": "string" },
+          "passed": { "type": "boolean" },
+          "evidence": { "type": "string" }
+        },
+        "required": ["check", "passed", "evidence"]
+      }
+    },
+    "risks": { "type": "array", "items": { "type": "string" } },
+    "next_actions": { "type": "array", "items": { "type": "string" } }
+  },
+  "required": ["bead_id", "status", "summary", "files_changed", "commands_run", "tests_run", "acceptance_checks"]
+}
