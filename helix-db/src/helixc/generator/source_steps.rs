@@ -38,6 +38,8 @@ pub enum SourceStep {
     SearchVector(SearchVector),
     /// Search for vectors using BM25
     SearchBM25(SearchBM25),
+    /// Hybrid search combining vector and BM25 with RRF fusion
+    SearchHybrid(SearchHybrid),
     Upsert(Upsert),
     /// Traversal starts from an anonymous node
     Anonymous,
@@ -408,6 +410,7 @@ impl Display for SourceStep {
             SourceStep::EFromType(e_from_type) => write!(f, "{e_from_type}"),
             SourceStep::SearchVector(search_vector) => write!(f, "{search_vector}"),
             SourceStep::SearchBM25(search_bm25) => write!(f, "{search_bm25}"),
+            SourceStep::SearchHybrid(search_hybrid) => write!(f, "{search_hybrid}"),
             SourceStep::Upsert(upsert) => write!(f, "upsert({:?})", upsert),
             SourceStep::Anonymous => write!(f, ""),
             SourceStep::Empty => {
@@ -453,6 +456,67 @@ impl Display for SearchVector {
                 self.vec, self.k, self.label,
             ),
         }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct SearchHybrid {
+    /// Label of vector type to search
+    pub label: GenRef<String>,
+    /// Vector data to search for
+    pub vec: VecData,
+    /// Text query for BM25 search
+    pub text_query: GeneratedValue,
+    /// Number of results to return
+    pub k: GeneratedValue,
+    /// Pre-filter to apply to vector search
+    pub pre_filter: Option<Vec<BoExp>>,
+}
+
+impl Display for SearchHybrid {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{{\n")?;
+        write!(
+            f,
+            "    let __hybrid_vec_results: Vec<_> = G::new(&db, &txn, &arena)\n"
+        )?;
+        match &self.pre_filter {
+            Some(pre_filter) => write!(
+                f,
+                "        .search_v::<fn(&HVector, &RoTxn) -> bool, _>({}, {}, {}, Some(&[{}]))\n",
+                self.vec,
+                self.k,
+                self.label,
+                pre_filter
+                    .iter()
+                    .map(|pf| format!("|v: &HVector, txn: &RoTxn| {pf}"))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            )?,
+            None => write!(
+                f,
+                "        .search_v::<fn(&HVector, &RoTxn) -> bool, _>({}, {}, {}, None)\n",
+                self.vec, self.k, self.label,
+            )?,
+        }
+        write!(f, "        .collect::<Result<Vec<_>, _>>()?;\n")?;
+        write!(
+            f,
+            "    let __hybrid_bm25_results: Vec<_> = G::new(&db, &txn, &arena)\n"
+        )?;
+        write!(
+            f,
+            "        .search_bm25({}, {}, {})?;\n",
+            self.label, self.text_query, self.k
+        )?;
+        write!(f, "    RRFReranker::fuse_lists(\n")?;
+        write!(
+            f,
+            "        vec![__hybrid_vec_results.into_iter(), __hybrid_bm25_results.into_iter()],\n"
+        )?;
+        write!(f, "        60.0\n")?;
+        write!(f, "    )?\n")?;
+        write!(f, "}}")
     }
 }
 
