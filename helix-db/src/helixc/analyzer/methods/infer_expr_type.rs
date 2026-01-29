@@ -20,8 +20,9 @@ use crate::{
             bool_ops::BoExp,
             queries::Query as GeneratedQuery,
             source_steps::{
-                AddE, AddN, AddV, SearchBM25, SearchHybrid as GeneratedSearchHybrid,
-                SearchVector as GeneratedSearchVector, SourceStep,
+                AddE, AddN, AddV, PPR as GeneratedPPR, SearchBM25,
+                SearchHybrid as GeneratedSearchHybrid, SearchVector as GeneratedSearchVector,
+                SourceStep,
             },
             statements::Statement as GeneratedStatement,
             traversal_steps::{
@@ -1563,11 +1564,153 @@ pub(crate) fn infer_expr_type<'a>(
             {
                 generate_error!(ctx, original_query, ppr.loc.clone(), E101, ty.as_str());
             }
-            // PPR returns scored nodes based on personalized PageRank
-            // For now, return a placeholder - full implementation needs generator support
+
+            let node_type = GenRef::Literal(ppr.node_type.clone().unwrap_or_default());
+
+            let seeds = match &ppr.seeds {
+                Some(s) => {
+                    is_valid_identifier(ctx, original_query, ppr.loc.clone(), s.as_str());
+                    type_in_scope(ctx, original_query, ppr.loc.clone(), scope, s.as_str());
+                    gen_identifier_or_param(original_query, s.as_str(), false, false)
+                }
+                None => {
+                    generate_error!(
+                        ctx,
+                        original_query,
+                        ppr.loc.clone(),
+                        E305,
+                        ["seeds", "PPR"],
+                        ["seeds"]
+                    );
+                    GeneratedValue::Unknown
+                }
+            };
+
+            let universe = match &ppr.universe {
+                Some(u) => {
+                    is_valid_identifier(ctx, original_query, ppr.loc.clone(), u.as_str());
+                    type_in_scope(ctx, original_query, ppr.loc.clone(), scope, u.as_str());
+                    gen_identifier_or_param(original_query, u.as_str(), false, false)
+                }
+                None => {
+                    generate_error!(
+                        ctx,
+                        original_query,
+                        ppr.loc.clone(),
+                        E305,
+                        ["universe", "PPR"],
+                        ["universe"]
+                    );
+                    GeneratedValue::Unknown
+                }
+            };
+
+            let depth = ppr.depth.as_ref().map(|d| match &d.value {
+                EvaluatesToNumberType::I8(i) => {
+                    GeneratedValue::Primitive(GenRef::Std(i.to_string()))
+                }
+                EvaluatesToNumberType::I16(i) => {
+                    GeneratedValue::Primitive(GenRef::Std(i.to_string()))
+                }
+                EvaluatesToNumberType::I32(i) => {
+                    GeneratedValue::Primitive(GenRef::Std(i.to_string()))
+                }
+                EvaluatesToNumberType::I64(i) => {
+                    GeneratedValue::Primitive(GenRef::Std(i.to_string()))
+                }
+                EvaluatesToNumberType::U8(i) => {
+                    GeneratedValue::Primitive(GenRef::Std(i.to_string()))
+                }
+                EvaluatesToNumberType::U16(i) => {
+                    GeneratedValue::Primitive(GenRef::Std(i.to_string()))
+                }
+                EvaluatesToNumberType::U32(i) => {
+                    GeneratedValue::Primitive(GenRef::Std(i.to_string()))
+                }
+                EvaluatesToNumberType::U64(i) => {
+                    GeneratedValue::Primitive(GenRef::Std(i.to_string()))
+                }
+                EvaluatesToNumberType::U128(i) => {
+                    GeneratedValue::Primitive(GenRef::Std(i.to_string()))
+                }
+                EvaluatesToNumberType::Identifier(i) => {
+                    is_valid_identifier(ctx, original_query, ppr.loc.clone(), i.as_str());
+                    type_in_scope(ctx, original_query, ppr.loc.clone(), scope, i.as_str());
+                    gen_identifier_or_param(original_query, i, false, false)
+                }
+                _ => GeneratedValue::Unknown,
+            });
+
+            let damping = ppr.damping.as_ref().map(|d| match &d.value {
+                EvaluatesToNumberType::F32(f) => {
+                    GeneratedValue::Primitive(GenRef::Std(f.to_string()))
+                }
+                EvaluatesToNumberType::F64(f) => {
+                    GeneratedValue::Primitive(GenRef::Std(f.to_string()))
+                }
+                EvaluatesToNumberType::Identifier(i) => {
+                    is_valid_identifier(ctx, original_query, ppr.loc.clone(), i.as_str());
+                    type_in_scope(ctx, original_query, ppr.loc.clone(), scope, i.as_str());
+                    gen_identifier_or_param(original_query, i, false, false)
+                }
+                _ => GeneratedValue::Unknown,
+            });
+
+            let limit = match &ppr.limit {
+                Some(l) => match &l.value {
+                    EvaluatesToNumberType::I8(i) => {
+                        GeneratedValue::Primitive(GenRef::Std(i.to_string()))
+                    }
+                    EvaluatesToNumberType::I16(i) => {
+                        GeneratedValue::Primitive(GenRef::Std(i.to_string()))
+                    }
+                    EvaluatesToNumberType::I32(i) => {
+                        GeneratedValue::Primitive(GenRef::Std(i.to_string()))
+                    }
+                    EvaluatesToNumberType::I64(i) => {
+                        GeneratedValue::Primitive(GenRef::Std(i.to_string()))
+                    }
+                    EvaluatesToNumberType::U8(i) => {
+                        GeneratedValue::Primitive(GenRef::Std(i.to_string()))
+                    }
+                    EvaluatesToNumberType::U16(i) => {
+                        GeneratedValue::Primitive(GenRef::Std(i.to_string()))
+                    }
+                    EvaluatesToNumberType::U32(i) => {
+                        GeneratedValue::Primitive(GenRef::Std(i.to_string()))
+                    }
+                    EvaluatesToNumberType::U64(i) => {
+                        GeneratedValue::Primitive(GenRef::Std(i.to_string()))
+                    }
+                    EvaluatesToNumberType::U128(i) => {
+                        GeneratedValue::Primitive(GenRef::Std(i.to_string()))
+                    }
+                    EvaluatesToNumberType::Identifier(i) => {
+                        is_valid_identifier(ctx, original_query, ppr.loc.clone(), i.as_str());
+                        type_in_scope(ctx, original_query, ppr.loc.clone(), scope, i.as_str());
+                        gen_identifier_or_param(original_query, i, false, false)
+                    }
+                    _ => GeneratedValue::Unknown,
+                },
+                None => GeneratedValue::Primitive(GenRef::Std("10".to_string())),
+            };
+
             (
                 Type::Nodes(ppr.node_type.clone()),
-                None, // TODO: Add PPR generator support
+                Some(GeneratedStatement::Traversal(GeneratedTraversal {
+                    traversal_type: TraversalType::Standalone,
+                    steps: vec![],
+                    should_collect: ShouldCollect::No,
+                    source_step: Separator::Empty(SourceStep::PPR(GeneratedPPR {
+                        node_type,
+                        seeds: GenRef::Std(format!("{seeds}")),
+                        universe: GenRef::Std(format!("{universe}")),
+                        depth,
+                        damping,
+                        limit,
+                    })),
+                    ..Default::default()
+                })),
             )
         }
         And(exprs) => {

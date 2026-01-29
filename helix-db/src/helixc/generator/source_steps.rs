@@ -40,6 +40,8 @@ pub enum SourceStep {
     SearchBM25(SearchBM25),
     /// Hybrid search combining vector and BM25 with RRF fusion
     SearchHybrid(SearchHybrid),
+    /// Personalized PageRank
+    PPR(PPR),
     Upsert(Upsert),
     /// Traversal starts from an anonymous node
     Anonymous,
@@ -411,6 +413,7 @@ impl Display for SourceStep {
             SourceStep::SearchVector(search_vector) => write!(f, "{search_vector}"),
             SourceStep::SearchBM25(search_bm25) => write!(f, "{search_bm25}"),
             SourceStep::SearchHybrid(search_hybrid) => write!(f, "{search_hybrid}"),
+            SourceStep::PPR(ppr) => write!(f, "{ppr}"),
             SourceStep::Upsert(upsert) => write!(f, "upsert({:?})", upsert),
             SourceStep::Anonymous => write!(f, ""),
             SourceStep::Empty => {
@@ -517,6 +520,34 @@ impl Display for SearchHybrid {
         write!(f, "        60.0\n")?;
         write!(f, "    )?\n")?;
         write!(f, "}}")
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct PPR {
+    pub node_type: GenRef<String>,
+    pub seeds: GenRef<String>,
+    pub universe: GenRef<String>,
+    pub depth: Option<GeneratedValue>,
+    pub damping: Option<GeneratedValue>,
+    pub limit: GeneratedValue,
+}
+
+impl Display for PPR {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let depth = match &self.depth {
+            Some(d) => format!("{d}"),
+            None => "3".to_string(),
+        };
+        let damping = match &self.damping {
+            Some(d) => format!("{d}"),
+            None => "0.85".to_string(),
+        };
+        write!(
+            f,
+            "crate::helix_engine::graph::ppr::ppr(&{}, &{}, &std::collections::HashMap::new(), {}, {}, {})",
+            self.universe, self.seeds, depth, damping, self.limit
+        )
     }
 }
 
