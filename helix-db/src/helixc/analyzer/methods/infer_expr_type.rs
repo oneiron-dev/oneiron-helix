@@ -1336,6 +1336,7 @@ pub(crate) fn infer_expr_type<'a>(
                 })),
             )
         }
+        ExpressionType::SearchHybrid(_) => todo!("SearchHybrid not yet implemented"),
         And(exprs) => {
             let exprs = exprs
                 .iter()

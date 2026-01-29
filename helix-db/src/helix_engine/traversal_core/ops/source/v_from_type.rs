@@ -49,7 +49,6 @@ impl<'db, 'arena, 'txn, I: Iterator<Item = Result<TraversalValue<'arena>, GraphE
             .filter_map(move |item| {
                 if let Ok((id, value)) = item {
 
-
                     // get label via bytes directly
                     assert!(
                         value.len() >= LMDB_STRING_HEADER_LENGTH,
@@ -66,23 +65,23 @@ impl<'db, 'arena, 'txn, I: Iterator<Item = Result<TraversalValue<'arena>, GraphE
 
 
                     // get deleted via bytes directly
-                    
+
                     // skip single byte for version
                     let version_index = length_of_label_in_lmdb + LMDB_STRING_HEADER_LENGTH;
 
-                    // get bool for deleted 
+                    // get bool for deleted
                     let deleted_index = version_index + 1;
                     let deleted = value[deleted_index] == 1;
 
                     if deleted {
                         return None;
                     }
-        
+
                     if label_in_lmdb == label_bytes {
                         let vector_without_data = VectorWithoutData::from_bincode_bytes(self.arena, value, id)
                                     .map_err(|e| VectorError::ConversionError(e.to_string()))
                                     .ok()?;
-        
+
                         if get_vector_data {
                             let mut vector = match self.storage.vectors.get_raw_vector_data(self.txn, id, label, self.arena) {
                                 Ok(bytes) => bytes,
@@ -99,7 +98,7 @@ impl<'db, 'arena, 'txn, I: Iterator<Item = Result<TraversalValue<'arena>, GraphE
                     } else {
                         return None;
                     }
-                   
+
                 }
                 None
             });

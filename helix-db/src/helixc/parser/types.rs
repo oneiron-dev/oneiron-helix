@@ -608,6 +608,7 @@ pub enum ExpressionType {
     And(Vec<Expression>),
     Or(Vec<Expression>),
     SearchVector(SearchVector),
+    SearchHybrid(SearchHybrid),
     BM25Search(BM25Search),
     MathFunctionCall(MathFunctionCall),
     Empty,
@@ -639,6 +640,7 @@ impl Debug for ExpressionType {
             ExpressionType::And(exprs) => write!(f, "And({exprs:?})"),
             ExpressionType::Or(exprs) => write!(f, "Or({exprs:?})"),
             ExpressionType::SearchVector(sv) => write!(f, "SearchVector({sv:?})"),
+            ExpressionType::SearchHybrid(sh) => write!(f, "SearchHybrid({sh:?})"),
             ExpressionType::BM25Search(bm25) => write!(f, "BM25Search({bm25:?})"),
             ExpressionType::MathFunctionCall(mfc) => write!(f, "MathFunctionCall({mfc:?})"),
             ExpressionType::Empty => write!(f, "Empty"),
@@ -663,6 +665,7 @@ impl Display for ExpressionType {
             ExpressionType::And(exprs) => write!(f, "And({exprs:?})"),
             ExpressionType::Or(exprs) => write!(f, "Or({exprs:?})"),
             ExpressionType::SearchVector(sv) => write!(f, "SearchVector({sv:?})"),
+            ExpressionType::SearchHybrid(sh) => write!(f, "SearchHybrid({sh:?})"),
             ExpressionType::BM25Search(bm25) => write!(f, "BM25Search({bm25:?})"),
             ExpressionType::MathFunctionCall(mfc) => {
                 write!(f, "{}({:?})", mfc.function.name(), mfc.args)
@@ -968,6 +971,16 @@ pub struct SearchVector {
     pub loc: Loc,
     pub vector_type: Option<String>,
     pub data: Option<VectorData>,
+    pub k: Option<EvaluatesToNumber>,
+    pub pre_filter: Option<Box<Expression>>,
+}
+
+#[derive(Debug, Clone)]
+pub struct SearchHybrid {
+    pub loc: Loc,
+    pub vector_type: Option<String>,
+    pub vec_data: Option<VectorData>,
+    pub text_query: Option<ValueType>,
     pub k: Option<EvaluatesToNumber>,
     pub pre_filter: Option<Box<Expression>>,
 }

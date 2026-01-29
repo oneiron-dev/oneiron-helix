@@ -1,4 +1,5 @@
 pub mod bm25;
+pub mod graph;
 pub mod macros;
 pub mod reranker;
 pub mod storage_core;
