@@ -148,7 +148,6 @@ impl HelixParser {
             loc: pair.loc(),
         })
     }
-
 }
 
 #[cfg(test)]

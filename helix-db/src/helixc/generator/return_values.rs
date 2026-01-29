@@ -236,16 +236,20 @@ impl ReturnValueStruct {
                     ReturnFieldType::Nested(_) => {
                         // Nested fields become Vec<NestedTypeName> or NestedTypeName (if is_first)
                         // Use the nested_struct_name from the source if available, otherwise fall back to field name
-                        let (nested_type_name, is_first) = if let ReturnFieldSource::NestedTraversal {
-                            nested_struct_name: Some(name),
-                            is_first,
-                            ..
-                        } = &field_info.source
-                        {
-                            (name.clone(), *is_first)
-                        } else {
-                            (format!("{}ReturnType", capitalize_first(&field_info.name)), false)
-                        };
+                        let (nested_type_name, is_first) =
+                            if let ReturnFieldSource::NestedTraversal {
+                                nested_struct_name: Some(name),
+                                is_first,
+                                ..
+                            } = &field_info.source
+                            {
+                                (name.clone(), *is_first)
+                            } else {
+                                (
+                                    format!("{}ReturnType", capitalize_first(&field_info.name)),
+                                    false,
+                                )
+                            };
                         let has_lt = nested_has_lifetime
                             .get(&nested_type_name)
                             .copied()
@@ -269,7 +273,10 @@ impl ReturnValueStruct {
                 ReturnValueField {
                     name: field_info.name.clone(),
                     field_type,
-                    is_implicit: matches!(field_info.source, ReturnFieldSource::ImplicitField { .. }),
+                    is_implicit: matches!(
+                        field_info.source,
+                        ReturnFieldSource::ImplicitField { .. }
+                    ),
                     is_nested_traversal: matches!(
                         field_info.source,
                         ReturnFieldSource::NestedTraversal { .. }
@@ -488,7 +495,7 @@ pub enum ReturnFieldSource {
         accessed_field_name: Option<String>, // For simple property access, the field being accessed (e.g., "name" for usr::{name})
         own_closure_param: Option<String>, // This traversal's own closure parameter if it ends with a Closure step
         requires_full_traversal: bool, // True if traversal has graph navigation steps (Out, In, COUNT, etc.)
-        is_first: bool, // True if ::FIRST was used (should_collect = ToObj)
+        is_first: bool,                // True if ::FIRST was used (should_collect = ToObj)
     },
 }
 
@@ -497,17 +504,25 @@ impl ReturnFieldInfo {
         Self {
             name,
             field_type: ReturnFieldType::Simple(field_type),
-            source: ReturnFieldSource::ImplicitField { property_name: None },
+            source: ReturnFieldSource::ImplicitField {
+                property_name: None,
+            },
         }
     }
 
     /// Create an implicit field with a different source property name
     /// e.g., output "file_id" from property "ID"
-    pub fn new_implicit_with_property(name: String, property_name: String, field_type: RustFieldType) -> Self {
+    pub fn new_implicit_with_property(
+        name: String,
+        property_name: String,
+        field_type: RustFieldType,
+    ) -> Self {
         Self {
             name,
             field_type: ReturnFieldType::Simple(field_type),
-            source: ReturnFieldSource::ImplicitField { property_name: Some(property_name) },
+            source: ReturnFieldSource::ImplicitField {
+                property_name: Some(property_name),
+            },
         }
     }
 
@@ -515,17 +530,25 @@ impl ReturnFieldInfo {
         Self {
             name,
             field_type: ReturnFieldType::Simple(field_type),
-            source: ReturnFieldSource::SchemaField { property_name: None },
+            source: ReturnFieldSource::SchemaField {
+                property_name: None,
+            },
         }
     }
 
     /// Create a schema field with a different source property name
     /// e.g., output "post" from property "content"
-    pub fn new_schema_with_property(name: String, property_name: String, field_type: RustFieldType) -> Self {
+    pub fn new_schema_with_property(
+        name: String,
+        property_name: String,
+        field_type: RustFieldType,
+    ) -> Self {
         Self {
             name,
             field_type: ReturnFieldType::Simple(field_type),
-            source: ReturnFieldSource::SchemaField { property_name: Some(property_name) },
+            source: ReturnFieldSource::SchemaField {
+                property_name: Some(property_name),
+            },
         }
     }
 

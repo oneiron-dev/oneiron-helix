@@ -8,6 +8,7 @@ use crossterm::{
     terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
 use eyre::Result;
+use flume;
 use ratatui::{
     Frame, Terminal,
     backend::CrosstermBackend,
@@ -18,7 +19,6 @@ use ratatui::{
 };
 use std::io;
 use std::time::Duration as StdDuration;
-use flume;
 use tokio::task::JoinHandle;
 
 /// Orange highlight color matching Helix branding
@@ -224,9 +224,7 @@ pub async fn run(log_source: LogSource, instance_name: String) -> Result<()> {
 
 /// Spawn the SSE streaming task for live mode.
 /// Returns a channel receiver and the task handle.
-fn spawn_live_stream(
-    log_source: LogSource,
-) -> (flume::Receiver<String>, JoinHandle<Result<()>>) {
+fn spawn_live_stream(log_source: LogSource) -> (flume::Receiver<String>, JoinHandle<Result<()>>) {
     let (tx, rx) = flume::unbounded::<String>();
 
     let handle = tokio::spawn(async move {
@@ -258,10 +256,8 @@ async fn run_app(
     fetch_initial_logs(app, initial_size.height as usize).await?;
 
     // Start SSE streaming for live mode
-    let (mut log_rx, mut stream_handle): (
-        flume::Receiver<String>,
-        JoinHandle<Result<()>>,
-    ) = spawn_live_stream(app.log_source.clone());
+    let (mut log_rx, mut stream_handle): (flume::Receiver<String>, JoinHandle<Result<()>>) =
+        spawn_live_stream(app.log_source.clone());
 
     loop {
         let size = terminal.size()?;
@@ -473,10 +469,7 @@ fn expand_log_lines(logs: Vec<String>) -> Vec<String> {
         .flat_map(|line| {
             // Replace escaped \n with actual newlines, then split
             let expanded = line.replace("\\n", "\n");
-            expanded
-                .lines()
-                .map(String::from)
-                .collect::<Vec<_>>()
+            expanded.lines().map(String::from).collect::<Vec<_>>()
         })
         .collect()
 }

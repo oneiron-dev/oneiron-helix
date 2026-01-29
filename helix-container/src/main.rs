@@ -155,6 +155,5 @@ fn main() {
         Some(opts),
     );
 
-
     gateway.run().expect("Failed to run gateway")
 }

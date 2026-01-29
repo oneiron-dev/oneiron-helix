@@ -740,7 +740,9 @@ pub(crate) fn infer_expr_type<'a>(
                             false,
                         ),
                         // Parser guarantees edge from_id is Identifier or Literal
-                        _ => unreachable!("parser guarantees edge from_id is Identifier or Literal"),
+                        _ => {
+                            unreachable!("parser guarantees edge from_id is Identifier or Literal")
+                        }
                     },
                     _ => {
                         generate_error!(ctx, original_query, add.loc.clone(), E612);

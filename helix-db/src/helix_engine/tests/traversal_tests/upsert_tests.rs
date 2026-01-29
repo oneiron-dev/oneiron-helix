@@ -983,8 +983,15 @@ fn test_upsert_v_new_vector_is_searchable() {
         .collect::<Result<Vec<_>, _>>()
         .unwrap();
 
-    assert!(!search_results.is_empty(), "Search should find the upserted vector");
-    assert_eq!(search_results[0].id(), inserted_id, "Should find the same vector");
+    assert!(
+        !search_results.is_empty(),
+        "Search should find the upserted vector"
+    );
+    assert_eq!(
+        search_results[0].id(),
+        inserted_id,
+        "Should find the same vector"
+    );
 }
 
 // ============================================================================
@@ -1020,7 +1027,10 @@ fn test_upsert_n_update_property_then_revert() {
 
     assert_eq!(updated.id(), node_id);
     if let TraversalValue::Node(node) = &updated {
-        assert_eq!(node.get_property("message_id").unwrap(), &Value::from("changed_msg_id"));
+        assert_eq!(
+            node.get_property("message_id").unwrap(),
+            &Value::from("changed_msg_id")
+        );
     }
 
     // Revert property back to original value - THIS IS THE REGRESSION TEST
@@ -1032,7 +1042,10 @@ fn test_upsert_n_update_property_then_revert() {
     assert_eq!(reverted.len(), 1);
     assert_eq!(reverted[0].id(), node_id);
     if let TraversalValue::Node(node) = &reverted[0] {
-        assert_eq!(node.get_property("message_id").unwrap(), &Value::from("original_msg_id"));
+        assert_eq!(
+            node.get_property("message_id").unwrap(),
+            &Value::from("original_msg_id")
+        );
     }
 
     txn.commit().unwrap();
@@ -1051,10 +1064,13 @@ fn test_upsert_n_multiple_nodes_same_property_value() {
         std::iter::empty::<TraversalValue>(),
         &arena,
     )
-    .upsert_n("email", &[
-        ("email_id", Value::from("email_001")),
-        ("message_id", Value::from("shared_msg_id")),
-    ])
+    .upsert_n(
+        "email",
+        &[
+            ("email_id", Value::from("email_001")),
+            ("message_id", Value::from("shared_msg_id")),
+        ],
+    )
     .collect::<Result<Vec<_>, _>>()
     .unwrap()[0]
         .clone();
@@ -1066,10 +1082,13 @@ fn test_upsert_n_multiple_nodes_same_property_value() {
         std::iter::empty::<TraversalValue>(),
         &arena,
     )
-    .upsert_n("email", &[
-        ("email_id", Value::from("email_002")),
-        ("message_id", Value::from("shared_msg_id")),
-    ])
+    .upsert_n(
+        "email",
+        &[
+            ("email_id", Value::from("email_002")),
+            ("message_id", Value::from("shared_msg_id")),
+        ],
+    )
     .collect::<Result<Vec<_>, _>>()
     .unwrap()[0]
         .clone();
@@ -1081,10 +1100,13 @@ fn test_upsert_n_multiple_nodes_same_property_value() {
         std::iter::empty::<TraversalValue>(),
         &arena,
     )
-    .upsert_n("email", &[
-        ("email_id", Value::from("email_003")),
-        ("message_id", Value::from("shared_msg_id")),
-    ])
+    .upsert_n(
+        "email",
+        &[
+            ("email_id", Value::from("email_003")),
+            ("message_id", Value::from("shared_msg_id")),
+        ],
+    )
     .collect::<Result<Vec<_>, _>>()
     .unwrap()[0]
         .clone();
@@ -1097,7 +1119,10 @@ fn test_upsert_n_multiple_nodes_same_property_value() {
     // All should have the same message_id
     for node in [&node1, &node2, &node3] {
         if let TraversalValue::Node(n) = node {
-            assert_eq!(n.get_property("message_id").unwrap(), &Value::from("shared_msg_id"));
+            assert_eq!(
+                n.get_property("message_id").unwrap(),
+                &Value::from("shared_msg_id")
+            );
         }
     }
 
@@ -1117,10 +1142,13 @@ fn test_upsert_n_update_one_node_preserves_others_with_same_value() {
         std::iter::empty::<TraversalValue>(),
         &arena,
     )
-    .upsert_n("email", &[
-        ("email_id", Value::from("email_001")),
-        ("message_id", Value::from("shared_msg")),
-    ])
+    .upsert_n(
+        "email",
+        &[
+            ("email_id", Value::from("email_001")),
+            ("message_id", Value::from("shared_msg")),
+        ],
+    )
     .collect::<Result<Vec<_>, _>>()
     .unwrap()[0]
         .clone();
@@ -1131,10 +1159,13 @@ fn test_upsert_n_update_one_node_preserves_others_with_same_value() {
         std::iter::empty::<TraversalValue>(),
         &arena,
     )
-    .upsert_n("email", &[
-        ("email_id", Value::from("email_002")),
-        ("message_id", Value::from("shared_msg")),
-    ])
+    .upsert_n(
+        "email",
+        &[
+            ("email_id", Value::from("email_002")),
+            ("message_id", Value::from("shared_msg")),
+        ],
+    )
     .collect::<Result<Vec<_>, _>>()
     .unwrap()[0]
         .clone();
@@ -1152,19 +1183,26 @@ fn test_upsert_n_update_one_node_preserves_others_with_same_value() {
     // Verify node1 was updated
     if let TraversalValue::Node(n) = &node1_updated {
         assert_eq!(n.id, node1_id);
-        assert_eq!(n.get_property("message_id").unwrap(), &Value::from("unique_msg"));
+        assert_eq!(
+            n.get_property("message_id").unwrap(),
+            &Value::from("unique_msg")
+        );
     }
 
     // Now revert node1 back to shared_msg - should succeed
-    let node1_reverted = G::new_mut_from_iter(&storage, &mut txn, std::iter::once(node1_updated), &arena)
-        .upsert_n("email", &[("message_id", Value::from("shared_msg"))])
-        .collect::<Result<Vec<_>, _>>()
-        .unwrap();
+    let node1_reverted =
+        G::new_mut_from_iter(&storage, &mut txn, std::iter::once(node1_updated), &arena)
+            .upsert_n("email", &[("message_id", Value::from("shared_msg"))])
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
 
     assert_eq!(node1_reverted.len(), 1);
     if let TraversalValue::Node(n) = &node1_reverted[0] {
         assert_eq!(n.id, node1_id);
-        assert_eq!(n.get_property("message_id").unwrap(), &Value::from("shared_msg"));
+        assert_eq!(
+            n.get_property("message_id").unwrap(),
+            &Value::from("shared_msg")
+        );
     }
 
     txn.commit().unwrap();

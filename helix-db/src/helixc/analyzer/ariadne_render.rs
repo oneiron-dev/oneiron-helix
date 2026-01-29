@@ -32,18 +32,32 @@ pub fn render(diag: &Diagnostic, src: &str, filepath: &str) -> String {
     let src_len = src.len();
     if byte_range.is_empty() {
         // Empty range - return a simple text error
-        return format!("[{}] {}: {}", diag.error_code, diag.severity_str(), diag.message);
+        return format!(
+            "[{}] {}: {}",
+            diag.error_code,
+            diag.severity_str(),
+            diag.message
+        );
     }
     if byte_range.start > src_len || byte_range.end > src_len {
         // Range exceeds source length - return a simple text error
         return format!(
             "[{}] {}: {} (at byte {}..{})",
-            diag.error_code, diag.severity_str(), diag.message, byte_range.start, byte_range.end
+            diag.error_code,
+            diag.severity_str(),
+            diag.message,
+            byte_range.start,
+            byte_range.end
         );
     }
     if byte_range.start > byte_range.end {
         // Inverted range - return a simple text error
-        return format!("[{}] {}: {}", diag.error_code, diag.severity_str(), diag.message);
+        return format!(
+            "[{}] {}: {}",
+            diag.error_code,
+            diag.severity_str(),
+            diag.message
+        );
     }
 
     // Build the primary label - uses message without context suffix
@@ -69,9 +83,7 @@ pub fn render(diag: &Diagnostic, src: &str, filepath: &str) -> String {
     {
         let fix_range = span.byte_range();
         // Only add if range is valid and within source bounds
-        if fix_range.start < fix_range.end
-            && fix_range.start <= src_len
-            && fix_range.end <= src_len
+        if fix_range.start < fix_range.end && fix_range.start <= src_len && fix_range.end <= src_len
         {
             let fix_label = Label::new((filepath, fix_range))
                 .with_message(format!("suggestion: {}", to_add))
@@ -92,7 +104,6 @@ pub fn render(diag: &Diagnostic, src: &str, filepath: &str) -> String {
         );
     }
 
-    String::from_utf8(output.into_inner()).unwrap_or_else(|_| {
-        format!("[{}] {}", diag.error_code, diag.message)
-    })
+    String::from_utf8(output.into_inner())
+        .unwrap_or_else(|_| format!("[{}] {}", diag.error_code, diag.message))
 }

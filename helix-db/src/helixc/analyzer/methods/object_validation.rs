@@ -291,12 +291,10 @@ fn validate_property_access<'a>(
                     }
                     // This branch is guarded by the outer `if` which checks for Identifier
                     // but add defensive handling in case the match pattern changes
-                    other => {
-                        Err(ParserError::ParseError(format!(
-                            "expected identifier in property access, got: {:?}",
-                            other
-                        )))
-                    }
+                    other => Err(ParserError::ParseError(format!(
+                        "expected identifier in property access, got: {:?}",
+                        other
+                    ))),
                 }
             } else if !obj.fields.is_empty() {
                 // Multiple fields selected - extract them for return value generation
@@ -325,10 +323,9 @@ fn validate_property_access<'a>(
                             // Use the key (output field name), not the id (source property name)
                             gen_traversal.object_fields.push(field_addition.key.clone());
                             // Track the mapping from output name to source property name
-                            gen_traversal.field_name_mappings.insert(
-                                field_addition.key.clone(),
-                                id.clone(),
-                            );
+                            gen_traversal
+                                .field_name_mappings
+                                .insert(field_addition.key.clone(), id.clone());
                         }
                         FieldValueType::Traversal(tr) => {
                             // Nested traversal - validate it now to get the type
@@ -463,10 +460,9 @@ fn validate_property_access<'a>(
                                 // If this is an identifier expression, track the mapping
                                 // e.g., "post: content" where content is parsed as Expression(Identifier("content"))
                                 if let ExpressionType::Identifier(id) = &expr.expr {
-                                    gen_traversal.field_name_mappings.insert(
-                                        field_addition.key.clone(),
-                                        id.clone(),
-                                    );
+                                    gen_traversal
+                                        .field_name_mappings
+                                        .insert(field_addition.key.clone(), id.clone());
                                 }
                             }
                         }

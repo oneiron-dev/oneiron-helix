@@ -17,8 +17,11 @@ pub fn find_available_port(starting_port: u16) -> Result<u16> {
             return Ok(port);
         }
     }
-    Err(eyre!("Could not find available port in range {}-{}",
-              starting_port, starting_port + MAX_PORT_ATTEMPTS - 1))
+    Err(eyre!(
+        "Could not find available port in range {}-{}",
+        starting_port,
+        starting_port + MAX_PORT_ATTEMPTS - 1
+    ))
 }
 
 /// Check port and return actual port to use (may differ from requested)

@@ -1026,7 +1026,6 @@ pub struct AddEdge {
     pub from_identifier: bool,
 }
 
-
 #[derive(Debug, Clone)]
 pub struct EdgeConnection {
     pub loc: Loc,

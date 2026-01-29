@@ -340,7 +340,8 @@ pub mod helixc_utils {
         let hx_files: Vec<HxFile> = files
             .iter()
             .map(|file| {
-                let name = file.path()
+                let name = file
+                    .path()
                     .canonicalize()
                     .unwrap_or_else(|_| file.path())
                     .to_string_lossy()

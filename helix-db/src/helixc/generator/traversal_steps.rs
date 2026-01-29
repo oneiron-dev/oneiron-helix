@@ -442,7 +442,10 @@ impl Traversal {
                 | Separator::Newline(s) => s,
             };
             // Skip PropertyFetch and ReservedPropertyAccess steps
-            if !matches!(inner_step, Step::PropertyFetch(_) | Step::ReservedPropertyAccess(_)) {
+            if !matches!(
+                inner_step,
+                Step::PropertyFetch(_) | Step::ReservedPropertyAccess(_)
+            ) {
                 result.push_str(&format!("\n{}", step));
             }
         }
@@ -884,12 +887,10 @@ impl OrderBy {
 
         let step = self.traversal.steps.first()?.inner();
         match step {
-            Step::PropertyFetch(prop) => {
-                Some(format!(
-                    "val.get_property({}).cloned().unwrap_or(Value::Empty)",
-                    prop
-                ))
-            }
+            Step::PropertyFetch(prop) => Some(format!(
+                "val.get_property({}).cloned().unwrap_or(Value::Empty)",
+                prop
+            )),
             Step::ReservedPropertyAccess(reserved_prop) => {
                 let value_expr = match reserved_prop {
                     ReservedProp::Id => "Value::Id(ID::from(val.id()))".to_string(),

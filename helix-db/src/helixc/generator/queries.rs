@@ -1010,7 +1010,10 @@ impl Query {
                                     struct_def.source_variable
                                 )
                             } else if property_name == "to_node" {
-                                format!("uuid_str({}.to_node(), &arena)", struct_def.source_variable)
+                                format!(
+                                    "uuid_str({}.to_node(), &arena)",
+                                    struct_def.source_variable
+                                )
                             } else if property_name == "data" {
                                 format!("{}.data()", struct_def.source_variable)
                             } else if property_name == "score" {
@@ -1740,7 +1743,10 @@ impl Query {
                                     struct_def.source_variable
                                 )
                             } else if property_name == "to_node" {
-                                format!("uuid_str({}.to_node(), &arena)", struct_def.source_variable)
+                                format!(
+                                    "uuid_str({}.to_node(), &arena)",
+                                    struct_def.source_variable
+                                )
                             } else if property_name == "data" {
                                 format!("{}.data()", struct_def.source_variable)
                             } else if property_name == "score" {

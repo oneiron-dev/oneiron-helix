@@ -213,10 +213,7 @@ pub(crate) fn validate_statements<'a>(
                         [&field]
                     );
                     // Continue with Unknown type to allow analysis to proceed
-                    body_scope.insert(
-                        field.as_str(),
-                        VariableInfo::new(Type::Unknown, true),
-                    );
+                    body_scope.insert(field.as_str(), VariableInfo::new(Type::Unknown, true));
                     for_variable = ForVariable::Identifier(GenRef::Std(field.clone()));
                 }
                 ForLoopVars::ObjectDestructuring { fields, loc: _ } => {
@@ -320,7 +317,8 @@ pub(crate) fn validate_statements<'a>(
                                                 for (field_loc, field_name) in fields {
                                                     let name = field_name.as_str();
                                                     // adds non-param fields to scope
-                                                    let Some(field_type) = object.get(name).cloned()
+                                                    let Some(field_type) =
+                                                        object.get(name).cloned()
                                                     else {
                                                         generate_error!(
                                                             ctx,

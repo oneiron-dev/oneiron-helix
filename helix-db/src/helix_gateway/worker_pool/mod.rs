@@ -223,7 +223,6 @@ impl Worker {
         io_rt: Arc<Runtime>,
     ) -> Worker {
         let handle = std::thread::spawn(move || {
-
             // Initialize thread-local metrics buffer
             helix_metrics::init_thread_local();
 

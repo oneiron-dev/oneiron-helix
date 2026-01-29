@@ -136,7 +136,10 @@ impl Display for ForLoopInVariable {
             ForLoopInVariable::Identifier(identifier, _) => write!(f, "{identifier}"),
             ForLoopInVariable::Parameter(parameter, _) => write!(f, "&data.{parameter}"),
             ForLoopInVariable::Empty => {
-                debug_assert!(false, "ForLoopInVariable::Empty should be caught by analyzer");
+                debug_assert!(
+                    false,
+                    "ForLoopInVariable::Empty should be caught by analyzer"
+                );
                 write!(f, "/* ERROR: empty for loop in variable */")
             }
         }

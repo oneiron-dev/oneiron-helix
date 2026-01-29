@@ -386,18 +386,27 @@ impl HelixConfig {
 
         // Validate project config
         if self.project.name.is_empty() {
-            return Err(eyre!("Project name cannot be empty in {}", relative_path.display()));
+            return Err(eyre!(
+                "Project name cannot be empty in {}",
+                relative_path.display()
+            ));
         }
 
         // Validate instances
         if self.local.is_empty() && self.cloud.is_empty() {
-            return Err(eyre!("At least one instance must be defined in {}", relative_path.display()));
+            return Err(eyre!(
+                "At least one instance must be defined in {}",
+                relative_path.display()
+            ));
         }
 
         // Validate local instances
         for (name, config) in &self.local {
             if name.is_empty() {
-                return Err(eyre!("Instance name cannot be empty in {}", relative_path.display()));
+                return Err(eyre!(
+                    "Instance name cannot be empty in {}",
+                    relative_path.display()
+                ));
             }
 
             if config.build_mode == BuildMode::Debug {
@@ -411,7 +420,10 @@ impl HelixConfig {
         // Validate cloud instances
         for (name, config) in &self.cloud {
             if name.is_empty() {
-                return Err(eyre!("Instance name cannot be empty in {}", relative_path.display()));
+                return Err(eyre!(
+                    "Instance name cannot be empty in {}",
+                    relative_path.display()
+                ));
             }
 
             if config.get_cluster_id().is_none() {

@@ -203,7 +203,11 @@ pub(super) fn get_singular_type(ty: Type) -> Type {
         Type::Edge(_) => ty,
         Type::Vector(_) => ty,
         _ => {
-            debug_assert!(false, "get_singular_type called with unexpected type: {:?}", ty);
+            debug_assert!(
+                false,
+                "get_singular_type called with unexpected type: {:?}",
+                ty
+            );
             Type::Unknown
         }
     }
@@ -369,7 +373,11 @@ impl FieldLookup for Type {
                 })
                 .unwrap_or(true),
             _ => {
-                debug_assert!(false, "item_fields_contains_key called with unexpected type: {:?}", self);
+                debug_assert!(
+                    false,
+                    "item_fields_contains_key called with unexpected type: {:?}",
+                    self
+                );
                 false
             }
         }
@@ -408,7 +416,11 @@ impl FieldLookup for Type {
                 vector_type.as_str(),
             ),
             _ => {
-                debug_assert!(false, "item_fields_contains_key_with_type called with unexpected type: {:?}", self);
+                debug_assert!(
+                    false,
+                    "item_fields_contains_key_with_type called with unexpected type: {:?}",
+                    self
+                );
                 (false, "unknown")
             }
         };
@@ -459,7 +471,11 @@ impl FieldLookup for Type {
                 })
                 .unwrap_or(None),
             _ => {
-                debug_assert!(false, "get_field_type_from_item_fields called with unexpected type: {:?}", self);
+                debug_assert!(
+                    false,
+                    "get_field_type_from_item_fields called with unexpected type: {:?}",
+                    self
+                );
                 None
             }
         }
