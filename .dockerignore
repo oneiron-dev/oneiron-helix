@@ -1,0 +1,11 @@
+.git
+.gitignore
+**/target
+**/*.rs.bk
+**/*.log
+.DS_Store
+.idea
+.vscode
+node_modules
+coverage
+*.swp
