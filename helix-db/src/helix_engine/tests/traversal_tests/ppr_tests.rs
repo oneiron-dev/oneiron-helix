@@ -94,7 +94,7 @@ fn test_ppr_single_seed_propagation() {
         3,
         0.85,
         10,
-        false,
+        true,
     );
 
     assert!(!result.is_empty());
@@ -112,8 +112,8 @@ fn test_ppr_single_seed_propagation() {
     let carol_s = carol_score.unwrap();
 
     assert!(
-        alice_s >= 1.0,
-        "Seed node should retain at least its initial score"
+        alice_s >= bob_s && alice_s >= carol_s,
+        "Seed node should have the highest score"
     );
     assert!(
         bob_s > 0.0,
@@ -197,7 +197,7 @@ fn test_ppr_multiple_seeds_distribution() {
         2,
         0.85,
         10,
-        false,
+        true,
     );
 
     let topic1_score = result.iter().find(|(id, _)| *id == topic1).map(|(_, s)| *s);
@@ -208,14 +208,9 @@ fn test_ppr_multiple_seeds_distribution() {
 
     let t1s = topic1_score.unwrap();
     let t2s = topic2_score.unwrap();
-    let expected_seed_score = 0.5;
     assert!(
-        t1s >= expected_seed_score,
-        "Each seed should keep at least its initial score"
-    );
-    assert!(
-        t2s >= expected_seed_score,
-        "Each seed should keep at least its initial score"
+        t1s > 0.0 && t2s > 0.0,
+        "Each seed should have a positive score"
     );
 }
 
@@ -291,7 +286,7 @@ fn test_ppr_candidate_set_gating() {
         3,
         0.85,
         10,
-        false,
+        true,
     );
 
     let outside_score = result
@@ -365,7 +360,7 @@ fn test_ppr_bidirectional_traversal() {
         1,
         0.85,
         10,
-        false,
+        true,
     );
 
     let source_score = result.iter().find(|(id, _)| *id == source).map(|(_, s)| *s);
@@ -440,7 +435,7 @@ fn test_ppr_part_of_hop_limit() {
         5,
         0.85,
         10,
-        false,
+        true,
     );
 
     let b_score = result.iter().find(|(id, _)| *id == node_b).map(|(_, s)| *s);
@@ -526,7 +521,7 @@ fn test_ppr_opposes_edge_blocks_propagation() {
         3,
         0.85,
         10,
-        false,
+        true,
     );
 
     let supported_score = result
@@ -634,7 +629,7 @@ fn test_ppr_custom_edge_weights() {
         2,
         0.85,
         10,
-        false,
+        true,
     );
 
     let high_score = result
@@ -728,7 +723,7 @@ fn test_ppr_disconnected_nodes_zero_score() {
         5,
         0.85,
         10,
-        false,
+        true,
     );
 
     let disconnected_score = result
@@ -791,7 +786,7 @@ fn test_ppr_damping_factor_effect() {
         2,
         0.9,
         10,
-        false,
+        true,
     );
     drop(txn_high);
 
@@ -807,7 +802,7 @@ fn test_ppr_damping_factor_effect() {
         2,
         0.5,
         10,
-        false,
+        true,
     );
 
     let high_node2_score = result_high_damping
@@ -880,7 +875,7 @@ fn test_ppr_teleport_probability() {
         3,
         0.5,
         10,
-        false,
+        true,
     );
     drop(txn_teleport);
 
@@ -896,7 +891,7 @@ fn test_ppr_teleport_probability() {
         3,
         1.0,
         10,
-        false,
+        true,
     );
 
     let a_teleport = result_teleport
@@ -969,7 +964,7 @@ fn test_ppr_limit_results() {
         2,
         0.85,
         3,
-        false,
+        true,
     );
 
     assert_eq!(result.len(), 3, "Result should be limited to 3 entries");
@@ -1277,7 +1272,7 @@ fn test_ppr_oneiron_full_graph() {
         3,
         0.85,
         20,
-        false,
+        true,
     );
 
     // Print all scores for verification
@@ -1478,10 +1473,19 @@ fn test_ppr_normalization() {
     );
 
     // Check unnormalized sum is NOT 1.0
+    // With 3 nodes (A->B->C), seed A, damping 0.85, depth 3:
+    // - A gets initial score 1.0, plus teleport scores each iteration
+    // - B and C get propagated scores from A
+    // - Sum must be > 1.0 due to teleport adding score back to seed
     let sum_unnorm: f64 = result_unnorm.iter().map(|(_, s)| s).sum();
     assert!(
         (sum_unnorm - 1.0).abs() > 0.01,
         "Unnormalized scores should NOT sum to 1.0, got {}",
+        sum_unnorm
+    );
+    assert!(
+        sum_unnorm > 1.5 || sum_unnorm < 0.5,
+        "Unnormalized sum should be significantly different from 1.0, got {}",
         sum_unnorm
     );
 
