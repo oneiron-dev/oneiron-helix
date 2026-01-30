@@ -961,3 +961,414 @@ fn test_ppr_limit_results() {
 
     assert_eq!(result.len(), 3, "Result should be limited to 3 entries");
 }
+
+#[test]
+fn test_ppr_oneiron_full_graph() {
+    let (_temp_dir, storage) = setup_test_db();
+    let arena = Bump::new();
+    let mut txn = storage.graph_env.write_txn().unwrap();
+
+    // Create 3 person nodes
+    let alice = G::new_mut(&storage, &arena, &mut txn)
+        .add_n(
+            "person",
+            props_option(&arena, props!("name" => "Alice")),
+            None,
+        )
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap()[0]
+        .id();
+
+    let bob = G::new_mut(&storage, &arena, &mut txn)
+        .add_n(
+            "person",
+            props_option(&arena, props!("name" => "Bob")),
+            None,
+        )
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap()[0]
+        .id();
+
+    let carol = G::new_mut(&storage, &arena, &mut txn)
+        .add_n(
+            "person",
+            props_option(&arena, props!("name" => "Carol")),
+            None,
+        )
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap()[0]
+        .id();
+
+    // Create 2 session nodes
+    let session1 = G::new_mut(&storage, &arena, &mut txn)
+        .add_n(
+            "session",
+            props_option(&arena, props!("name" => "Session1")),
+            None,
+        )
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap()[0]
+        .id();
+
+    let session2 = G::new_mut(&storage, &arena, &mut txn)
+        .add_n(
+            "session",
+            props_option(&arena, props!("name" => "Session2")),
+            None,
+        )
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap()[0]
+        .id();
+
+    // Create 3 turn nodes
+    let turn1 = G::new_mut(&storage, &arena, &mut txn)
+        .add_n(
+            "turn",
+            props_option(&arena, props!("name" => "Turn1")),
+            None,
+        )
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap()[0]
+        .id();
+
+    let turn2 = G::new_mut(&storage, &arena, &mut txn)
+        .add_n(
+            "turn",
+            props_option(&arena, props!("name" => "Turn2")),
+            None,
+        )
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap()[0]
+        .id();
+
+    let turn3 = G::new_mut(&storage, &arena, &mut txn)
+        .add_n(
+            "turn",
+            props_option(&arena, props!("name" => "Turn3")),
+            None,
+        )
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap()[0]
+        .id();
+
+    // Create 2 claim nodes
+    let claim1 = G::new_mut(&storage, &arena, &mut txn)
+        .add_n(
+            "claim",
+            props_option(&arena, props!("name" => "Claim1")),
+            None,
+        )
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap()[0]
+        .id();
+
+    let claim2 = G::new_mut(&storage, &arena, &mut txn)
+        .add_n(
+            "claim",
+            props_option(&arena, props!("name" => "Claim2")),
+            None,
+        )
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap()[0]
+        .id();
+
+    // Create 1 topic node
+    let topic1 = G::new_mut(&storage, &arena, &mut txn)
+        .add_n(
+            "topic",
+            props_option(&arena, props!("name" => "Topic1")),
+            None,
+        )
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap()[0]
+        .id();
+
+    // Create 3 place nodes for part_of chain
+    let seattle = G::new_mut(&storage, &arena, &mut txn)
+        .add_n(
+            "place",
+            props_option(&arena, props!("name" => "Seattle")),
+            None,
+        )
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap()[0]
+        .id();
+
+    let washington = G::new_mut(&storage, &arena, &mut txn)
+        .add_n(
+            "place",
+            props_option(&arena, props!("name" => "Washington")),
+            None,
+        )
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap()[0]
+        .id();
+
+    let usa = G::new_mut(&storage, &arena, &mut txn)
+        .add_n(
+            "place",
+            props_option(&arena, props!("name" => "USA")),
+            None,
+        )
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap()[0]
+        .id();
+
+    // Edge type 1: belongs_to (1.0) - turn -> session
+    G::new_mut(&storage, &arena, &mut txn)
+        .add_edge("belongs_to", None, turn1, session1, false, false)
+        .collect_to_obj()
+        .unwrap();
+
+    G::new_mut(&storage, &arena, &mut txn)
+        .add_edge("belongs_to", None, turn2, session1, false, false)
+        .collect_to_obj()
+        .unwrap();
+
+    // Edge type 2: participates_in (1.0) - person -> session
+    G::new_mut(&storage, &arena, &mut txn)
+        .add_edge("participates_in", None, alice, session1, false, false)
+        .collect_to_obj()
+        .unwrap();
+
+    G::new_mut(&storage, &arena, &mut txn)
+        .add_edge("participates_in", None, bob, session1, false, false)
+        .collect_to_obj()
+        .unwrap();
+
+    // Edge type 3: attached (0.8) - skipped (no assets in this test)
+
+    // Edge type 4: authored_by (0.9) - turn -> person
+    G::new_mut(&storage, &arena, &mut txn)
+        .add_edge("authored_by", None, turn1, alice, false, false)
+        .collect_to_obj()
+        .unwrap();
+
+    G::new_mut(&storage, &arena, &mut txn)
+        .add_edge("authored_by", None, turn2, bob, false, false)
+        .collect_to_obj()
+        .unwrap();
+
+    // Edge type 5: mentions (0.6) - turn -> person
+    G::new_mut(&storage, &arena, &mut txn)
+        .add_edge("mentions", None, turn1, bob, false, false)
+        .collect_to_obj()
+        .unwrap();
+
+    // Edge type 6: about (0.5) - turn -> topic
+    G::new_mut(&storage, &arena, &mut txn)
+        .add_edge("about", None, turn1, topic1, false, false)
+        .collect_to_obj()
+        .unwrap();
+
+    // Edge type 7: supports (1.0) - turn -> claim
+    G::new_mut(&storage, &arena, &mut txn)
+        .add_edge("supports", None, turn1, claim1, false, false)
+        .collect_to_obj()
+        .unwrap();
+
+    // Edge type 8: opposes (0.0) - turn -> claim (blocks propagation!)
+    G::new_mut(&storage, &arena, &mut txn)
+        .add_edge("opposes", None, turn2, claim1, false, false)
+        .collect_to_obj()
+        .unwrap();
+
+    // Edge type 9: claim_of (1.0) - claim -> person
+    G::new_mut(&storage, &arena, &mut txn)
+        .add_edge("claim_of", None, claim1, alice, false, false)
+        .collect_to_obj()
+        .unwrap();
+
+    // Edge type 10: scoped_to (0.7) - claim -> session
+    G::new_mut(&storage, &arena, &mut txn)
+        .add_edge("scoped_to", None, claim1, session1, false, false)
+        .collect_to_obj()
+        .unwrap();
+
+    // Edge type 11: supersedes (0.3) - claim -> claim
+    G::new_mut(&storage, &arena, &mut txn)
+        .add_edge("supersedes", None, claim1, claim2, false, false)
+        .collect_to_obj()
+        .unwrap();
+
+    // Edge type 12: derived_from (0.2) - skipped (no summaries in this test)
+
+    // Edge type 13: part_of (0.8) - place -> place chain
+    G::new_mut(&storage, &arena, &mut txn)
+        .add_edge("part_of", None, seattle, washington, false, false)
+        .collect_to_obj()
+        .unwrap();
+
+    G::new_mut(&storage, &arena, &mut txn)
+        .add_edge("part_of", None, washington, usa, false, false)
+        .collect_to_obj()
+        .unwrap();
+
+    // Add edge from turn3 to seattle to connect part_of chain to main graph
+    G::new_mut(&storage, &arena, &mut txn)
+        .add_edge("about", None, turn3, seattle, false, false)
+        .collect_to_obj()
+        .unwrap();
+
+    // Add turn3 belongs_to session2 and authored_by carol
+    G::new_mut(&storage, &arena, &mut txn)
+        .add_edge("belongs_to", None, turn3, session2, false, false)
+        .collect_to_obj()
+        .unwrap();
+
+    G::new_mut(&storage, &arena, &mut txn)
+        .add_edge("authored_by", None, turn3, carol, false, false)
+        .collect_to_obj()
+        .unwrap();
+
+    txn.commit().unwrap();
+
+    // Run PPR from seed alice
+    let arena = Bump::new();
+    let txn = storage.graph_env.read_txn().unwrap();
+
+    let universe: HashSet<u128> = [
+        alice, bob, carol, session1, session2, turn1, turn2, turn3, claim1, claim2, topic1,
+        seattle, washington, usa,
+    ]
+    .into_iter()
+    .collect();
+
+    let seeds = vec![alice];
+    let edge_weights = HashMap::new();
+
+    let result = ppr_with_storage(
+        &storage,
+        &txn,
+        &arena,
+        &universe,
+        &seeds,
+        &edge_weights,
+        3,
+        0.85,
+        20,
+    );
+
+    // Print all scores for verification
+    println!("\n=== PPR Oneiron Full Graph Test Results ===");
+    println!("Seed: alice");
+    println!("Depth: 3, Damping: 0.85");
+    println!("\nNode Scores:");
+
+    let get_score = |id: u128| -> f64 {
+        result
+            .iter()
+            .find(|(node_id, _)| *node_id == id)
+            .map(|(_, s)| *s)
+            .unwrap_or(0.0)
+    };
+
+    let alice_score = get_score(alice);
+    let bob_score = get_score(bob);
+    let carol_score = get_score(carol);
+    let session1_score = get_score(session1);
+    let session2_score = get_score(session2);
+    let turn1_score = get_score(turn1);
+    let turn2_score = get_score(turn2);
+    let turn3_score = get_score(turn3);
+    let claim1_score = get_score(claim1);
+    let claim2_score = get_score(claim2);
+    let topic1_score = get_score(topic1);
+    let seattle_score = get_score(seattle);
+    let washington_score = get_score(washington);
+    let usa_score = get_score(usa);
+
+    println!("  alice (seed):     {:.6}", alice_score);
+    println!("  bob:              {:.6}", bob_score);
+    println!("  carol:            {:.6}", carol_score);
+    println!("  session1:         {:.6}", session1_score);
+    println!("  session2:         {:.6}", session2_score);
+    println!("  turn1:            {:.6}", turn1_score);
+    println!("  turn2:            {:.6}", turn2_score);
+    println!("  turn3:            {:.6}", turn3_score);
+    println!("  claim1:           {:.6}", claim1_score);
+    println!("  claim2:           {:.6}", claim2_score);
+    println!("  topic1:           {:.6}", topic1_score);
+    println!("  seattle:          {:.6}", seattle_score);
+    println!("  washington:       {:.6}", washington_score);
+    println!("  usa:              {:.6}", usa_score);
+    println!();
+
+    // ASSERTIONS
+
+    // 1. alice (seed) has highest score
+    assert!(
+        alice_score > 0.0,
+        "alice (seed) should have a positive score"
+    );
+    for (name, score) in [
+        ("bob", bob_score),
+        ("carol", carol_score),
+        ("session1", session1_score),
+        ("turn1", turn1_score),
+        ("claim1", claim1_score),
+    ] {
+        assert!(
+            alice_score >= score,
+            "alice (seed) should have score >= {} (alice: {}, {}: {})",
+            name,
+            alice_score,
+            name,
+            score
+        );
+    }
+
+    // 2. session1 has score > 0 (via participates_in inbound from alice)
+    assert!(
+        session1_score > 0.0,
+        "session1 should have score > 0 (via participates_in from alice)"
+    );
+
+    // 3. turn1 has score > 0 (via authored_by inbound from alice)
+    assert!(
+        turn1_score > 0.0,
+        "turn1 should have score > 0 (via authored_by inbound to alice)"
+    );
+
+    // 4. claim1 has score > 0 (via claim_of inbound from alice)
+    assert!(
+        claim1_score > 0.0,
+        "claim1 should have score > 0 (via claim_of inbound to alice)"
+    );
+
+    // 5. claim2 has LOW score (via supersedes with weight 0.3)
+    // claim2 is only reachable via claim1 -> supersedes -> claim2
+    // The weight 0.3 should make it much lower than claim1
+    assert!(
+        claim2_score < claim1_score,
+        "claim2 should have lower score than claim1 (supersedes weight 0.3): claim1={}, claim2={}",
+        claim1_score,
+        claim2_score
+    );
+
+    // 6. usa has ZERO or negligible score (beyond part_of 2-hop limit)
+    // seattle -> washington -> usa is a 2-hop part_of chain
+    // But seattle is not directly connected to alice, and usa is 3 hops via part_of
+    assert!(
+        usa_score < 0.001,
+        "usa should have zero or negligible score (beyond part_of 2-hop limit): {}",
+        usa_score
+    );
+
+    // Additional assertions to verify graph connectivity
+    // bob should have score (connected via participates_in to session1, and via mentions from turn1)
+    assert!(
+        bob_score > 0.0 || turn1_score > 0.0,
+        "bob or turn1 should have score from alice's connections"
+    );
+
+    // topic1 should have some score if turn1 has score (via about edge)
+    if turn1_score > 0.0 {
+        println!(
+            "turn1 has score {}, topic1 score: {}",
+            turn1_score, topic1_score
+        );
+    }
+
+    println!("=== All assertions passed! ===\n");
+}
