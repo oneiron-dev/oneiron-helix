@@ -50,10 +50,18 @@ mod tests {
         let id1 = v1.id;
 
         let bm25 = storage.bm25.as_ref().expect("BM25 should be enabled");
-        bm25.insert_doc(&mut wtxn, id1, "machine learning algorithms neural networks")
-            .unwrap();
-        bm25.insert_doc(&mut wtxn, v2.id, "deep learning frameworks tensorflow pytorch")
-            .unwrap();
+        bm25.insert_doc(
+            &mut wtxn,
+            id1,
+            "machine learning algorithms neural networks",
+        )
+        .unwrap();
+        bm25.insert_doc(
+            &mut wtxn,
+            v2.id,
+            "deep learning frameworks tensorflow pytorch",
+        )
+        .unwrap();
         bm25.insert_doc(&mut wtxn, v3.id, "data science analytics statistics")
             .unwrap();
         wtxn.commit().unwrap();
@@ -554,11 +562,23 @@ mod tests {
 
         let v_vector_only = storage
             .vectors
-            .insert::<fn(&HVector, &RoTxn) -> bool>(&mut wtxn, "vector", vec_vector_only, None, &arena)
+            .insert::<fn(&HVector, &RoTxn) -> bool>(
+                &mut wtxn,
+                "vector",
+                vec_vector_only,
+                None,
+                &arena,
+            )
             .unwrap();
         let v_text_only = storage
             .vectors
-            .insert::<fn(&HVector, &RoTxn) -> bool>(&mut wtxn, "vector", vec_text_only, None, &arena)
+            .insert::<fn(&HVector, &RoTxn) -> bool>(
+                &mut wtxn,
+                "vector",
+                vec_text_only,
+                None,
+                &arena,
+            )
             .unwrap();
         let v_both = storage
             .vectors
@@ -724,7 +744,11 @@ mod tests {
         let mut target_id = 0u128;
         for i in 0..50u128 {
             let x = if i == 25 { 1.0 } else { (i as f64) / 100.0 };
-            let y = if i == 25 { 0.0 } else { 1.0 - (i as f64) / 100.0 };
+            let y = if i == 25 {
+                0.0
+            } else {
+                1.0 - (i as f64) / 100.0
+            };
             let vec = arena.alloc_slice_copy(&[x, y, 0.1]);
             let v = storage
                 .vectors

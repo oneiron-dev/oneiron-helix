@@ -1,3 +1,4 @@
+use crate::helix_engine::graph::claim_filter::{ClaimFilterConfig, passes_claim_filter};
 use crate::helix_engine::storage_core::{HelixGraphStorage, storage_methods::StorageMethods};
 use heed3::RoTxn;
 use std::collections::{HashMap, HashSet};
@@ -171,6 +172,7 @@ pub fn ppr(
 ///
 /// # Returns
 /// Vector of (node_id, score) tuples sorted by score descending
+#[allow(clippy::too_many_arguments)]
 pub fn ppr_with_storage(
     storage: &HelixGraphStorage,
     txn: &RoTxn,
@@ -272,6 +274,128 @@ pub fn ppr_with_storage(
     result
 }
 
+/// Local PPR with candidate-set gating, storage access, and claim filtering
+///
+/// This extends `ppr_with_storage` with automatic claim filtering based on
+/// ONEIRON-ARCH-004 retrieval requirements:
+/// - `approvalStatus IN ("auto", "approved")` - only show approved claims
+/// - `lifecycleStatus = "active"` - only show active claims
+/// - `stale = false` - exclude stale data
+///
+/// Claim filtering is applied to nodes with label "claim" during result collection.
+/// Non-claim nodes pass through without filtering.
+///
+/// # Arguments
+/// * `storage` - Reference to the HelixGraphStorage for edge/node access
+/// * `txn` - Read-only transaction for database access
+/// * `arena` - Bumpalo arena for temporary allocations
+/// * `universe_ids` - Set of node IDs that form the candidate set
+/// * `seed_ids` - Starting nodes for PPR propagation
+/// * `edge_weights` - Map of edge label to weight (overrides EDGE_WEIGHTS constant)
+/// * `max_depth` - Maximum number of hops from seed nodes
+/// * `damping` - Damping factor (typically 0.85), controls score decay per hop
+/// * `limit` - Maximum number of results to return
+/// * `normalize` - When true, scale scores so their sum is 1.0
+/// * `claim_filter` - Optional claim filter config; None disables claim filtering
+///
+/// # Returns
+/// Vector of (node_id, score) tuples sorted by score descending, with claim filtering applied
+#[allow(clippy::too_many_arguments)]
+pub fn ppr_with_claim_filter(
+    storage: &HelixGraphStorage,
+    txn: &RoTxn,
+    arena: &bumpalo::Bump,
+    universe_ids: &HashSet<u128>,
+    seed_ids: &[u128],
+    edge_weights: &HashMap<String, f64>,
+    max_depth: usize,
+    damping: f64,
+    limit: usize,
+    normalize: bool,
+    claim_filter: Option<&ClaimFilterConfig>,
+) -> Vec<(u128, f64)> {
+    let result = ppr_with_storage(
+        storage,
+        txn,
+        arena,
+        universe_ids,
+        seed_ids,
+        edge_weights,
+        max_depth,
+        damping,
+        limit * 2,
+        normalize,
+    );
+
+    let Some(config) = claim_filter else {
+        let mut result = result;
+        result.truncate(limit);
+        return result;
+    };
+
+    let mut filtered: Vec<(u128, f64)> = Vec::with_capacity(limit);
+
+    for (node_id, score) in result {
+        if filtered.len() >= limit {
+            break;
+        }
+
+        let Ok(node) = storage.get_node(txn, &node_id, arena) else {
+            continue;
+        };
+
+        if node.label == "claim" {
+            if passes_claim_filter(&node, config) {
+                filtered.push((node_id, score));
+            }
+        } else {
+            filtered.push((node_id, score));
+        }
+    }
+
+    filtered
+}
+
+/// Filters a universe of node IDs to only include nodes that pass claim filtering
+///
+/// For nodes with label "claim", applies the claim filter config.
+/// Non-claim nodes pass through without filtering.
+///
+/// # Arguments
+/// * `storage` - Reference to the HelixGraphStorage
+/// * `txn` - Read-only transaction for database access
+/// * `arena` - Bumpalo arena for temporary allocations
+/// * `universe_ids` - Set of node IDs to filter
+/// * `config` - Claim filter configuration
+///
+/// # Returns
+/// HashSet of node IDs that pass the claim filter
+pub fn filter_universe_by_claims(
+    storage: &HelixGraphStorage,
+    txn: &RoTxn,
+    arena: &bumpalo::Bump,
+    universe_ids: &HashSet<u128>,
+    config: &ClaimFilterConfig,
+) -> HashSet<u128> {
+    let mut filtered = HashSet::with_capacity(universe_ids.len());
+
+    for &node_id in universe_ids {
+        let Ok(node) = storage.get_node(txn, &node_id, arena) else {
+            continue;
+        };
+
+        if node.label == "claim" {
+            if passes_claim_filter(&node, config) {
+                filtered.insert(node_id);
+            }
+        } else {
+            filtered.insert(node_id);
+        }
+    }
+
+    filtered
+}
+
 /// Helper function to get edge weight from either user-provided map or EDGE_WEIGHTS constant
 #[inline]
 pub fn get_edge_weight(edge_label: &str, edge_weights: &HashMap<String, f64>) -> f64 {
@@ -289,6 +413,7 @@ pub fn get_edge_weight(edge_label: &str, edge_weights: &HashMap<String, f64>) ->
 
 type AdjIterator<'a> = heed3::RoPrefix<'a, heed3::types::Bytes, heed3::types::Bytes>;
 
+#[allow(clippy::too_many_arguments)]
 fn propagate_edges(
     iter: Option<AdjIterator>,
     storage: &HelixGraphStorage,

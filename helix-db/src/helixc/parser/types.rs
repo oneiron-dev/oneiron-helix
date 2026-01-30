@@ -1009,6 +1009,7 @@ pub struct PPR {
     pub node_type: Option<String>,
     pub seeds: Option<String>,
     pub universe: Option<String>,
+    pub weights: Option<Vec<(String, f64)>>,
     pub depth: Option<EvaluatesToNumber>,
     pub damping: Option<EvaluatesToNumber>,
     pub limit: Option<EvaluatesToNumber>,

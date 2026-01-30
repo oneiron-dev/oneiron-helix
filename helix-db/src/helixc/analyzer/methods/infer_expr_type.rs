@@ -1705,6 +1705,7 @@ pub(crate) fn infer_expr_type<'a>(
                         node_type,
                         seeds: GenRef::Std(format!("{seeds}")),
                         universe: GenRef::Std(format!("{universe}")),
+                        weights: ppr.weights.clone(),
                         depth,
                         damping,
                         limit,

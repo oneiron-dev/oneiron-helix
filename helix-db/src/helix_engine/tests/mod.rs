@@ -6,4 +6,5 @@ pub mod capacity_optimization_tests;
 pub mod concurrency_tests;
 pub mod hnsw_tests;
 pub mod hybrid_search_tests;
+pub mod ppr_cache_tests;
 pub mod storage_tests;

@@ -635,6 +635,7 @@ impl HelixParser {
         let mut node_type = None;
         let mut seeds = None;
         let mut universe = None;
+        let mut weights: Option<Vec<(String, f64)>> = None;
         let mut depth: Option<EvaluatesToNumber> = None;
         let mut damping: Option<EvaluatesToNumber> = None;
         let mut limit: Option<EvaluatesToNumber> = None;
@@ -653,6 +654,33 @@ impl HelixParser {
                                     seeds = Some(key);
                                 } else if universe.is_none() {
                                     universe = Some(key);
+                                }
+                            }
+                            Rule::ppr_weights => {
+                                let mut weight_map = Vec::new();
+                                for entry in arg.into_inner() {
+                                    if entry.as_rule() == Rule::ppr_weight_entry {
+                                        let mut entry_inner = entry.into_inner();
+                                        let edge_name = entry_inner
+                                            .next()
+                                            .map(|p| p.as_str().to_string())
+                                            .ok_or_else(|| {
+                                                ParserError::from("Expected edge name in weights")
+                                            })?;
+                                        let weight_val = entry_inner
+                                            .next()
+                                            .map(|p| p.as_str().parse::<f64>())
+                                            .ok_or_else(|| {
+                                                ParserError::from("Expected weight value")
+                                            })?
+                                            .map_err(|_| {
+                                                ParserError::from("Invalid float value for weight")
+                                            })?;
+                                        weight_map.push((edge_name, weight_val));
+                                    }
+                                }
+                                if !weight_map.is_empty() {
+                                    weights = Some(weight_map);
                                 }
                             }
                             Rule::ppr_depth => {
@@ -749,6 +777,7 @@ impl HelixParser {
             node_type,
             seeds,
             universe,
+            weights,
             depth,
             damping,
             limit,
@@ -1372,6 +1401,100 @@ mod tests {
                 val2 <- 20
                 val3 <- 30
                 RETURN val1
+        "#;
+
+        let content = write_to_temp_file(vec![source]);
+        let result = HelixParser::parse_source(&content);
+        assert!(result.is_ok());
+    }
+
+    // ============================================================================
+    // PPR Tests
+    // ============================================================================
+
+    #[test]
+    fn test_parse_ppr_basic() {
+        let source = r#"
+            N::Memory { content: String }
+
+            QUERY testPPR(seeds: [ID], candidates: [ID]) =>
+                results <- PPR<Memory>(seeds: seeds, universe: candidates, limit: 10)
+                RETURN results
+        "#;
+
+        let content = write_to_temp_file(vec![source]);
+        let result = HelixParser::parse_source(&content);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_parse_ppr_with_all_params() {
+        let source = r#"
+            N::Memory { content: String }
+
+            QUERY testPPR(seeds: [ID], candidates: [ID]) =>
+                results <- PPR<Memory>(seeds: seeds, universe: candidates, depth: 3, damping: 0.85, limit: 50)
+                RETURN results
+        "#;
+
+        let content = write_to_temp_file(vec![source]);
+        let result = HelixParser::parse_source(&content);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_parse_ppr_with_custom_weights() {
+        let source = r#"
+            N::Memory { content: String }
+
+            QUERY testPPR(seeds: [ID], candidates: [ID]) =>
+                results <- PPR<Memory>(seeds: seeds, universe: candidates, weights: { mentions: 0.8, supports: 0.5 }, depth: 2, damping: 0.85, limit: 50)
+                RETURN results
+        "#;
+
+        let content = write_to_temp_file(vec![source]);
+        let result = HelixParser::parse_source(&content);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_parse_ppr_with_single_weight() {
+        let source = r#"
+            N::Memory { content: String }
+
+            QUERY testPPR(seeds: [ID], candidates: [ID]) =>
+                results <- PPR<Memory>(seeds: seeds, universe: candidates, weights: { belongs_to: 1.0 }, limit: 10)
+                RETURN results
+        "#;
+
+        let content = write_to_temp_file(vec![source]);
+        let result = HelixParser::parse_source(&content);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_parse_ppr_with_empty_weights() {
+        let source = r#"
+            N::Memory { content: String }
+
+            QUERY testPPR(seeds: [ID], candidates: [ID]) =>
+                results <- PPR<Memory>(seeds: seeds, universe: candidates, weights: {}, limit: 10)
+                RETURN results
+        "#;
+
+        let content = write_to_temp_file(vec![source]);
+        let result = HelixParser::parse_source(&content);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_parse_ppr_with_weights_trailing_comma() {
+        let source = r#"
+            N::Memory { content: String }
+
+            QUERY testPPR(seeds: [ID], candidates: [ID]) =>
+                results <- PPR<Memory>(seeds: seeds, universe: candidates, weights: { mentions: 0.8, supports: 0.5, }, limit: 10)
+                RETURN results
         "#;
 
         let content = write_to_temp_file(vec![source]);

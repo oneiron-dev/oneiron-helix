@@ -216,7 +216,11 @@ impl Display for UpsertE {
         );
         match (self.from_is_plural, self.to_is_plural) {
             (false, false) => {
-                write!(f, "upsert_e({}, {}, {}, {})", self.label, self.from, self.to, props)
+                write!(
+                    f,
+                    "upsert_e({}, {}, {}, {})",
+                    self.label, self.from, self.to, props
+                )
             }
             (true, false) => {
                 write!(
@@ -445,7 +449,10 @@ impl Display for SearchVector {
         write!(
             f,
             "search_v::<fn(&HVector, &RoTxn) -> bool, _>({}, {}, {}, {})",
-            self.vec, self.k, self.label, format_pre_filter(&self.pre_filter)
+            self.vec,
+            self.k,
+            self.label,
+            format_pre_filter(&self.pre_filter)
         )
     }
 }
@@ -480,8 +487,13 @@ impl Display for SearchHybrid {
         60.0
     ).map_err(|e| GraphError::from(e.to_string()))?
 }}",
-            self.vec, self.k, self.label, format_pre_filter(&self.pre_filter),
-            self.label, self.text_query, self.k
+            self.vec,
+            self.k,
+            self.label,
+            format_pre_filter(&self.pre_filter),
+            self.label,
+            self.text_query,
+            self.k
         )
     }
 }
@@ -491,6 +503,7 @@ pub struct PPR {
     pub node_type: GenRef<String>,
     pub seeds: GenRef<String>,
     pub universe: GenRef<String>,
+    pub weights: Option<Vec<(String, f64)>>,
     pub depth: Option<GeneratedValue>,
     pub damping: Option<GeneratedValue>,
     pub limit: GeneratedValue,
@@ -498,21 +511,38 @@ pub struct PPR {
 
 impl Display for PPR {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let depth = self.depth.as_ref().map_or("3".to_string(), |d| format!("{d}"));
-        let damping = self.damping.as_ref().map_or("0.85".to_string(), |d| format!("{d}"));
+        let depth = self
+            .depth
+            .as_ref()
+            .map_or("3".to_string(), |d| format!("{d}"));
+        let damping = self
+            .damping
+            .as_ref()
+            .map_or("0.85".to_string(), |d| format!("{d}"));
+        let weights_code = match &self.weights {
+            Some(weights) => {
+                let entries: Vec<String> = weights
+                    .iter()
+                    .map(|(name, weight)| format!("(\"{}\".to_string(), {})", name, weight))
+                    .collect();
+                format!("std::collections::HashMap::from([{}])", entries.join(", "))
+            }
+            None => "std::collections::HashMap::new()".to_string(),
+        };
         write!(
             f,
             "{{
     use helix_db::helix_engine::storage_core::storage_methods::StorageMethods;
     let ppr_universe: std::collections::HashSet<u128> = {}.iter().map(|id| **id).collect();
     let ppr_seeds: Vec<u128> = {}.iter().map(|id| **id).collect();
+    let ppr_edge_weights: std::collections::HashMap<String, f64> = {};
     let ppr_results = helix_db::helix_engine::graph::ppr::ppr_with_storage(
         &db,
         &txn,
         &arena,
         &ppr_universe,
         &ppr_seeds,
-        &std::collections::HashMap::new(),
+        &ppr_edge_weights,
         {} as usize,
         {},
         {} as usize,
@@ -522,7 +552,7 @@ impl Display for PPR {
         db.get_node(&txn, &node_id, &arena).ok().map(TraversalValue::Node)
     }}).collect::<Vec<_>>()
 }}",
-            self.universe, self.seeds, depth, damping, self.limit
+            self.universe, self.seeds, weights_code, depth, damping, self.limit
         )
     }
 }

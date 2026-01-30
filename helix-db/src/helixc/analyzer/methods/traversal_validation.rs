@@ -1077,6 +1077,7 @@ pub(crate) fn validate_traversal<'a>(
                 node_type,
                 seeds: GenRef::Std(format!("{seeds}")),
                 universe: GenRef::Std(format!("{universe}")),
+                weights: ppr.weights.clone(),
                 depth,
                 damping,
                 limit,

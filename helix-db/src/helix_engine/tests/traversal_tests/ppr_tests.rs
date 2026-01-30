@@ -1130,11 +1130,7 @@ fn test_ppr_oneiron_full_graph() {
         .id();
 
     let usa = G::new_mut(&storage, &arena, &mut txn)
-        .add_n(
-            "place",
-            props_option(&arena, props!("name" => "USA")),
-            None,
-        )
+        .add_n("place", props_option(&arena, props!("name" => "USA")), None)
         .collect::<Result<Vec<_>, _>>()
         .unwrap()[0]
         .id();
@@ -1509,4 +1505,550 @@ fn test_ppr_normalization() {
     println!("Unnormalized sum: {}", sum_unnorm);
     println!("Normalized sum: {}", sum_norm);
     println!("Ordering preserved: {:?}", order_norm);
+}
+
+#[test]
+fn test_ppr_claim_filter_excludes_unapproved() {
+    use crate::helix_engine::graph::claim_filter::ClaimFilterConfig;
+    use crate::helix_engine::graph::ppr::ppr_with_claim_filter;
+
+    let (_temp_dir, storage) = setup_test_db();
+    let arena = Bump::new();
+    let mut txn = storage.graph_env.write_txn().unwrap();
+
+    let approved_claim = G::new_mut(&storage, &arena, &mut txn)
+        .add_n(
+            "claim",
+            props_option(
+                &arena,
+                props!(
+                    "name" => "ApprovedClaim",
+                    "approvalStatus" => "approved",
+                    "lifecycleStatus" => "active",
+                    "stale" => false
+                ),
+            ),
+            None,
+        )
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap()[0]
+        .id();
+
+    let unapproved_claim = G::new_mut(&storage, &arena, &mut txn)
+        .add_n(
+            "claim",
+            props_option(
+                &arena,
+                props!(
+                    "name" => "UnapprovedClaim",
+                    "approvalStatus" => "pending",
+                    "lifecycleStatus" => "active",
+                    "stale" => false
+                ),
+            ),
+            None,
+        )
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap()[0]
+        .id();
+
+    let person = G::new_mut(&storage, &arena, &mut txn)
+        .add_n(
+            "person",
+            props_option(&arena, props!("name" => "Alice")),
+            None,
+        )
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap()[0]
+        .id();
+
+    G::new_mut(&storage, &arena, &mut txn)
+        .add_edge("claim_of", None, approved_claim, person, false, false)
+        .collect_to_obj()
+        .unwrap();
+
+    G::new_mut(&storage, &arena, &mut txn)
+        .add_edge("claim_of", None, unapproved_claim, person, false, false)
+        .collect_to_obj()
+        .unwrap();
+
+    txn.commit().unwrap();
+
+    let arena = Bump::new();
+    let txn = storage.graph_env.read_txn().unwrap();
+
+    let universe: HashSet<u128> = [approved_claim, unapproved_claim, person]
+        .into_iter()
+        .collect();
+    let seeds = vec![person];
+    let edge_weights = HashMap::new();
+    let config = ClaimFilterConfig::default();
+
+    let result = ppr_with_claim_filter(
+        &storage,
+        &txn,
+        &arena,
+        &universe,
+        &seeds,
+        &edge_weights,
+        2,
+        0.85,
+        10,
+        true,
+        Some(&config),
+    );
+
+    let approved_in_result = result.iter().any(|(id, _)| *id == approved_claim);
+    let unapproved_in_result = result.iter().any(|(id, _)| *id == unapproved_claim);
+
+    assert!(approved_in_result, "Approved claim should be in results");
+    assert!(
+        !unapproved_in_result,
+        "Unapproved claim should be filtered out"
+    );
+}
+
+#[test]
+fn test_ppr_claim_filter_excludes_stale() {
+    use crate::helix_engine::graph::claim_filter::ClaimFilterConfig;
+    use crate::helix_engine::graph::ppr::ppr_with_claim_filter;
+
+    let (_temp_dir, storage) = setup_test_db();
+    let arena = Bump::new();
+    let mut txn = storage.graph_env.write_txn().unwrap();
+
+    let fresh_claim = G::new_mut(&storage, &arena, &mut txn)
+        .add_n(
+            "claim",
+            props_option(
+                &arena,
+                props!(
+                    "name" => "FreshClaim",
+                    "approvalStatus" => "auto",
+                    "lifecycleStatus" => "active",
+                    "stale" => false
+                ),
+            ),
+            None,
+        )
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap()[0]
+        .id();
+
+    let stale_claim = G::new_mut(&storage, &arena, &mut txn)
+        .add_n(
+            "claim",
+            props_option(
+                &arena,
+                props!(
+                    "name" => "StaleClaim",
+                    "approvalStatus" => "auto",
+                    "lifecycleStatus" => "active",
+                    "stale" => true
+                ),
+            ),
+            None,
+        )
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap()[0]
+        .id();
+
+    let person = G::new_mut(&storage, &arena, &mut txn)
+        .add_n(
+            "person",
+            props_option(&arena, props!("name" => "Bob")),
+            None,
+        )
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap()[0]
+        .id();
+
+    G::new_mut(&storage, &arena, &mut txn)
+        .add_edge("claim_of", None, fresh_claim, person, false, false)
+        .collect_to_obj()
+        .unwrap();
+
+    G::new_mut(&storage, &arena, &mut txn)
+        .add_edge("claim_of", None, stale_claim, person, false, false)
+        .collect_to_obj()
+        .unwrap();
+
+    txn.commit().unwrap();
+
+    let arena = Bump::new();
+    let txn = storage.graph_env.read_txn().unwrap();
+
+    let universe: HashSet<u128> = [fresh_claim, stale_claim, person].into_iter().collect();
+    let seeds = vec![person];
+    let edge_weights = HashMap::new();
+    let config = ClaimFilterConfig::default();
+
+    let result = ppr_with_claim_filter(
+        &storage,
+        &txn,
+        &arena,
+        &universe,
+        &seeds,
+        &edge_weights,
+        2,
+        0.85,
+        10,
+        true,
+        Some(&config),
+    );
+
+    let fresh_in_result = result.iter().any(|(id, _)| *id == fresh_claim);
+    let stale_in_result = result.iter().any(|(id, _)| *id == stale_claim);
+
+    assert!(fresh_in_result, "Fresh claim should be in results");
+    assert!(!stale_in_result, "Stale claim should be filtered out");
+}
+
+#[test]
+fn test_ppr_claim_filter_allows_approved() {
+    use crate::helix_engine::graph::claim_filter::ClaimFilterConfig;
+    use crate::helix_engine::graph::ppr::ppr_with_claim_filter;
+
+    let (_temp_dir, storage) = setup_test_db();
+    let arena = Bump::new();
+    let mut txn = storage.graph_env.write_txn().unwrap();
+
+    let auto_claim = G::new_mut(&storage, &arena, &mut txn)
+        .add_n(
+            "claim",
+            props_option(
+                &arena,
+                props!(
+                    "name" => "AutoClaim",
+                    "approvalStatus" => "auto",
+                    "lifecycleStatus" => "active",
+                    "stale" => false
+                ),
+            ),
+            None,
+        )
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap()[0]
+        .id();
+
+    let approved_claim = G::new_mut(&storage, &arena, &mut txn)
+        .add_n(
+            "claim",
+            props_option(
+                &arena,
+                props!(
+                    "name" => "ApprovedClaim",
+                    "approvalStatus" => "approved",
+                    "lifecycleStatus" => "active",
+                    "stale" => false
+                ),
+            ),
+            None,
+        )
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap()[0]
+        .id();
+
+    let person = G::new_mut(&storage, &arena, &mut txn)
+        .add_n(
+            "person",
+            props_option(&arena, props!("name" => "Carol")),
+            None,
+        )
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap()[0]
+        .id();
+
+    G::new_mut(&storage, &arena, &mut txn)
+        .add_edge("claim_of", None, auto_claim, person, false, false)
+        .collect_to_obj()
+        .unwrap();
+
+    G::new_mut(&storage, &arena, &mut txn)
+        .add_edge("claim_of", None, approved_claim, person, false, false)
+        .collect_to_obj()
+        .unwrap();
+
+    txn.commit().unwrap();
+
+    let arena = Bump::new();
+    let txn = storage.graph_env.read_txn().unwrap();
+
+    let universe: HashSet<u128> = [auto_claim, approved_claim, person].into_iter().collect();
+    let seeds = vec![person];
+    let edge_weights = HashMap::new();
+    let config = ClaimFilterConfig::default();
+
+    let result = ppr_with_claim_filter(
+        &storage,
+        &txn,
+        &arena,
+        &universe,
+        &seeds,
+        &edge_weights,
+        2,
+        0.85,
+        10,
+        true,
+        Some(&config),
+    );
+
+    let auto_in_result = result.iter().any(|(id, _)| *id == auto_claim);
+    let approved_in_result = result.iter().any(|(id, _)| *id == approved_claim);
+
+    assert!(auto_in_result, "Auto-approved claim should be in results");
+    assert!(
+        approved_in_result,
+        "User-approved claim should be in results"
+    );
+}
+
+#[test]
+fn test_ppr_claim_filter_excludes_inactive() {
+    use crate::helix_engine::graph::claim_filter::ClaimFilterConfig;
+    use crate::helix_engine::graph::ppr::ppr_with_claim_filter;
+
+    let (_temp_dir, storage) = setup_test_db();
+    let arena = Bump::new();
+    let mut txn = storage.graph_env.write_txn().unwrap();
+
+    let active_claim = G::new_mut(&storage, &arena, &mut txn)
+        .add_n(
+            "claim",
+            props_option(
+                &arena,
+                props!(
+                    "name" => "ActiveClaim",
+                    "approvalStatus" => "auto",
+                    "lifecycleStatus" => "active",
+                    "stale" => false
+                ),
+            ),
+            None,
+        )
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap()[0]
+        .id();
+
+    let superseded_claim = G::new_mut(&storage, &arena, &mut txn)
+        .add_n(
+            "claim",
+            props_option(
+                &arena,
+                props!(
+                    "name" => "SupersededClaim",
+                    "approvalStatus" => "auto",
+                    "lifecycleStatus" => "superseded",
+                    "stale" => false
+                ),
+            ),
+            None,
+        )
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap()[0]
+        .id();
+
+    let person = G::new_mut(&storage, &arena, &mut txn)
+        .add_n(
+            "person",
+            props_option(&arena, props!("name" => "Dave")),
+            None,
+        )
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap()[0]
+        .id();
+
+    G::new_mut(&storage, &arena, &mut txn)
+        .add_edge("claim_of", None, active_claim, person, false, false)
+        .collect_to_obj()
+        .unwrap();
+
+    G::new_mut(&storage, &arena, &mut txn)
+        .add_edge("claim_of", None, superseded_claim, person, false, false)
+        .collect_to_obj()
+        .unwrap();
+
+    txn.commit().unwrap();
+
+    let arena = Bump::new();
+    let txn = storage.graph_env.read_txn().unwrap();
+
+    let universe: HashSet<u128> = [active_claim, superseded_claim, person]
+        .into_iter()
+        .collect();
+    let seeds = vec![person];
+    let edge_weights = HashMap::new();
+    let config = ClaimFilterConfig::default();
+
+    let result = ppr_with_claim_filter(
+        &storage,
+        &txn,
+        &arena,
+        &universe,
+        &seeds,
+        &edge_weights,
+        2,
+        0.85,
+        10,
+        true,
+        Some(&config),
+    );
+
+    let active_in_result = result.iter().any(|(id, _)| *id == active_claim);
+    let superseded_in_result = result.iter().any(|(id, _)| *id == superseded_claim);
+
+    assert!(active_in_result, "Active claim should be in results");
+    assert!(
+        !superseded_in_result,
+        "Superseded claim should be filtered out"
+    );
+}
+
+#[test]
+fn test_ppr_claim_filter_disabled() {
+    use crate::helix_engine::graph::ppr::ppr_with_claim_filter;
+
+    let (_temp_dir, storage) = setup_test_db();
+    let arena = Bump::new();
+    let mut txn = storage.graph_env.write_txn().unwrap();
+
+    let unapproved_claim = G::new_mut(&storage, &arena, &mut txn)
+        .add_n(
+            "claim",
+            props_option(
+                &arena,
+                props!(
+                    "name" => "UnapprovedClaim",
+                    "approvalStatus" => "pending",
+                    "lifecycleStatus" => "superseded",
+                    "stale" => true
+                ),
+            ),
+            None,
+        )
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap()[0]
+        .id();
+
+    let person = G::new_mut(&storage, &arena, &mut txn)
+        .add_n(
+            "person",
+            props_option(&arena, props!("name" => "Eve")),
+            None,
+        )
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap()[0]
+        .id();
+
+    G::new_mut(&storage, &arena, &mut txn)
+        .add_edge("claim_of", None, unapproved_claim, person, false, false)
+        .collect_to_obj()
+        .unwrap();
+
+    txn.commit().unwrap();
+
+    let arena = Bump::new();
+    let txn = storage.graph_env.read_txn().unwrap();
+
+    let universe: HashSet<u128> = [unapproved_claim, person].into_iter().collect();
+    let seeds = vec![person];
+    let edge_weights = HashMap::new();
+
+    let result = ppr_with_claim_filter(
+        &storage,
+        &txn,
+        &arena,
+        &universe,
+        &seeds,
+        &edge_weights,
+        2,
+        0.85,
+        10,
+        true,
+        None,
+    );
+
+    let unapproved_in_result = result.iter().any(|(id, _)| *id == unapproved_claim);
+
+    assert!(
+        unapproved_in_result,
+        "With filter disabled, all claims should be in results"
+    );
+}
+
+#[test]
+fn test_filter_universe_by_claims() {
+    use crate::helix_engine::graph::claim_filter::ClaimFilterConfig;
+    use crate::helix_engine::graph::ppr::filter_universe_by_claims;
+
+    let (_temp_dir, storage) = setup_test_db();
+    let arena = Bump::new();
+    let mut txn = storage.graph_env.write_txn().unwrap();
+
+    let valid_claim = G::new_mut(&storage, &arena, &mut txn)
+        .add_n(
+            "claim",
+            props_option(
+                &arena,
+                props!(
+                    "name" => "ValidClaim",
+                    "approvalStatus" => "auto",
+                    "lifecycleStatus" => "active",
+                    "stale" => false
+                ),
+            ),
+            None,
+        )
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap()[0]
+        .id();
+
+    let invalid_claim = G::new_mut(&storage, &arena, &mut txn)
+        .add_n(
+            "claim",
+            props_option(
+                &arena,
+                props!(
+                    "name" => "InvalidClaim",
+                    "approvalStatus" => "rejected",
+                    "lifecycleStatus" => "active",
+                    "stale" => false
+                ),
+            ),
+            None,
+        )
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap()[0]
+        .id();
+
+    let person = G::new_mut(&storage, &arena, &mut txn)
+        .add_n(
+            "person",
+            props_option(&arena, props!("name" => "Frank")),
+            None,
+        )
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap()[0]
+        .id();
+
+    txn.commit().unwrap();
+
+    let arena = Bump::new();
+    let txn = storage.graph_env.read_txn().unwrap();
+
+    let universe: HashSet<u128> = [valid_claim, invalid_claim, person].into_iter().collect();
+    let config = ClaimFilterConfig::default();
+
+    let filtered = filter_universe_by_claims(&storage, &txn, &arena, &universe, &config);
+
+    assert!(filtered.contains(&valid_claim), "Valid claim should pass");
+    assert!(
+        !filtered.contains(&invalid_claim),
+        "Invalid claim should be filtered"
+    );
+    assert!(
+        filtered.contains(&person),
+        "Non-claim nodes should pass through"
+    );
+    assert_eq!(filtered.len(), 2);
 }
