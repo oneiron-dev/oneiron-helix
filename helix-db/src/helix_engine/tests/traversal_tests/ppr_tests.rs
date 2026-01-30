@@ -94,6 +94,7 @@ fn test_ppr_single_seed_propagation() {
         3,
         0.85,
         10,
+        false,
     );
 
     assert!(!result.is_empty());
@@ -196,6 +197,7 @@ fn test_ppr_multiple_seeds_distribution() {
         2,
         0.85,
         10,
+        false,
     );
 
     let topic1_score = result.iter().find(|(id, _)| *id == topic1).map(|(_, s)| *s);
@@ -289,6 +291,7 @@ fn test_ppr_candidate_set_gating() {
         3,
         0.85,
         10,
+        false,
     );
 
     let outside_score = result
@@ -362,6 +365,7 @@ fn test_ppr_bidirectional_traversal() {
         1,
         0.85,
         10,
+        false,
     );
 
     let source_score = result.iter().find(|(id, _)| *id == source).map(|(_, s)| *s);
@@ -436,6 +440,7 @@ fn test_ppr_part_of_hop_limit() {
         5,
         0.85,
         10,
+        false,
     );
 
     let b_score = result.iter().find(|(id, _)| *id == node_b).map(|(_, s)| *s);
@@ -521,6 +526,7 @@ fn test_ppr_opposes_edge_blocks_propagation() {
         3,
         0.85,
         10,
+        false,
     );
 
     let supported_score = result
@@ -628,6 +634,7 @@ fn test_ppr_custom_edge_weights() {
         2,
         0.85,
         10,
+        false,
     );
 
     let high_score = result
@@ -721,6 +728,7 @@ fn test_ppr_disconnected_nodes_zero_score() {
         5,
         0.85,
         10,
+        false,
     );
 
     let disconnected_score = result
@@ -783,6 +791,7 @@ fn test_ppr_damping_factor_effect() {
         2,
         0.9,
         10,
+        false,
     );
     drop(txn_high);
 
@@ -798,6 +807,7 @@ fn test_ppr_damping_factor_effect() {
         2,
         0.5,
         10,
+        false,
     );
 
     let high_node2_score = result_high_damping
@@ -870,6 +880,7 @@ fn test_ppr_teleport_probability() {
         3,
         0.5,
         10,
+        false,
     );
     drop(txn_teleport);
 
@@ -885,6 +896,7 @@ fn test_ppr_teleport_probability() {
         3,
         1.0,
         10,
+        false,
     );
 
     let a_teleport = result_teleport
@@ -957,6 +969,7 @@ fn test_ppr_limit_results() {
         2,
         0.85,
         3,
+        false,
     );
 
     assert_eq!(result.len(), 3, "Result should be limited to 3 entries");
@@ -1264,6 +1277,7 @@ fn test_ppr_oneiron_full_graph() {
         3,
         0.85,
         20,
+        false,
     );
 
     // Print all scores for verification
@@ -1388,4 +1402,107 @@ fn test_ppr_oneiron_full_graph() {
     }
 
     println!("=== All assertions passed! ===\n");
+}
+
+#[test]
+fn test_ppr_normalization() {
+    // Test that normalize=true makes scores sum to 1.0
+    let (_temp_dir, storage) = setup_test_db();
+    let arena = Bump::new();
+    let mut txn = storage.graph_env.write_txn().unwrap();
+
+    // Create a simple graph: A -> B -> C
+    let node_a = G::new_mut(&storage, &arena, &mut txn)
+        .add_n("node", props_option(&arena, props!("name" => "A")), None)
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap()[0]
+        .id();
+
+    let node_b = G::new_mut(&storage, &arena, &mut txn)
+        .add_n("node", props_option(&arena, props!("name" => "B")), None)
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap()[0]
+        .id();
+
+    let node_c = G::new_mut(&storage, &arena, &mut txn)
+        .add_n("node", props_option(&arena, props!("name" => "C")), None)
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap()[0]
+        .id();
+
+    G::new_mut(&storage, &arena, &mut txn)
+        .add_edge("belongs_to", None, node_a, node_b, false, false)
+        .collect_to_obj()
+        .unwrap();
+
+    G::new_mut(&storage, &arena, &mut txn)
+        .add_edge("belongs_to", None, node_b, node_c, false, false)
+        .collect_to_obj()
+        .unwrap();
+
+    txn.commit().unwrap();
+
+    let arena = Bump::new();
+    let txn = storage.graph_env.read_txn().unwrap();
+
+    let universe: HashSet<u128> = [node_a, node_b, node_c].into_iter().collect();
+    let seeds = vec![node_a];
+    let edge_weights = HashMap::new();
+
+    // Run WITHOUT normalization
+    let result_unnorm = ppr_with_storage(
+        &storage,
+        &txn,
+        &arena,
+        &universe,
+        &seeds,
+        &edge_weights,
+        3,
+        0.85,
+        10,
+        false, // normalize=false
+    );
+
+    // Run WITH normalization
+    let result_norm = ppr_with_storage(
+        &storage,
+        &txn,
+        &arena,
+        &universe,
+        &seeds,
+        &edge_weights,
+        3,
+        0.85,
+        10,
+        true, // normalize=true
+    );
+
+    // Check unnormalized sum is NOT 1.0
+    let sum_unnorm: f64 = result_unnorm.iter().map(|(_, s)| s).sum();
+    assert!(
+        (sum_unnorm - 1.0).abs() > 0.01,
+        "Unnormalized scores should NOT sum to 1.0, got {}",
+        sum_unnorm
+    );
+
+    // Check normalized sum IS 1.0 (within epsilon)
+    let sum_norm: f64 = result_norm.iter().map(|(_, s)| s).sum();
+    assert!(
+        (sum_norm - 1.0).abs() < 0.0001,
+        "Normalized scores should sum to 1.0, got {}",
+        sum_norm
+    );
+
+    // Check relative ordering is preserved
+    let order_unnorm: Vec<u128> = result_unnorm.iter().map(|(id, _)| *id).collect();
+    let order_norm: Vec<u128> = result_norm.iter().map(|(id, _)| *id).collect();
+    assert_eq!(
+        order_unnorm, order_norm,
+        "Normalization should preserve relative ordering"
+    );
+
+    println!("=== PPR Normalization Test ===");
+    println!("Unnormalized sum: {}", sum_unnorm);
+    println!("Normalized sum: {}", sum_norm);
+    println!("Ordering preserved: {:?}", order_norm);
 }

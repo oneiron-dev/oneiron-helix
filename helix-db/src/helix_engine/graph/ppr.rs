@@ -167,6 +167,7 @@ pub fn ppr(
 /// * `max_depth` - Maximum number of hops from seed nodes
 /// * `damping` - Damping factor (typically 0.85), controls score decay per hop
 /// * `limit` - Maximum number of results to return
+/// * `normalize` - When true, scale scores so their sum is 1.0
 ///
 /// # Returns
 /// Vector of (node_id, score) tuples sorted by score descending
@@ -180,6 +181,7 @@ pub fn ppr_with_storage(
     max_depth: usize,
     damping: f64,
     limit: usize,
+    normalize: bool,
 ) -> Vec<(u128, f64)> {
     if seed_ids.is_empty() {
         return Vec::new();
@@ -323,6 +325,15 @@ pub fn ppr_with_storage(
         frontier = next_frontier;
     }
 
+    if normalize {
+        let total_score: f64 = scores.values().sum();
+        if total_score > 0.0 {
+            for score in scores.values_mut() {
+                *score /= total_score;
+            }
+        }
+    }
+
     let mut result: Vec<_> = scores.into_iter().collect();
     result.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
     result.truncate(limit);
@@ -461,6 +472,7 @@ mod tests {
                 usize,
                 f64,
                 usize,
+                bool,
             ) -> Vec<(u128, f64)>,
         ) {
         }

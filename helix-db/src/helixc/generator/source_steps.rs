@@ -572,6 +572,7 @@ impl Display for PPR {
         write!(f, "        {} as usize,\n", depth)?;
         write!(f, "        {},\n", damping)?;
         write!(f, "        {} as usize,\n", self.limit)?;
+        write!(f, "        false,\n")?;
         write!(f, "    );\n")?;
         write!(
             f,
