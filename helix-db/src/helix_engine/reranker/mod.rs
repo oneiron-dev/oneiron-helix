@@ -36,6 +36,6 @@ pub mod reranker;
 
 pub use adapters::RerankAdapter;
 pub use errors::{RerankerError, RerankerResult};
-pub use fusion::{MMRReranker, RRFReranker};
+pub use fusion::{MMRReranker, RRFReranker, SignalBoostConfig, apply_signal_boosts};
 pub use models::CrossEncoderConfig;
 pub use reranker::Reranker;

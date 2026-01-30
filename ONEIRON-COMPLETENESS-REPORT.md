@@ -36,7 +36,7 @@
 - **Features:**
   - Full grammar support for inline weight overrides
   - Weights merged with defaults at runtime
-  - 21 parser tests validating all weight patterns
+  - 21 parser tests + 7 E2E tests with NetworkX validation
 
 ### RRF Fusion Implementation
 - **Location:** `helix-db/src/helix_engine/reranker/fusion/rrf.rs`
@@ -61,7 +61,6 @@
   - `populate_cache_entry()` for cache warming
   - Cache invalidation: `mark_stale()`, `invalidate_for_entity()`
   - `PPRCacheMetrics` with hits/misses/stale_hits tracking
-  - Type aliases and simplified serialization
 - **Remaining for Phase 2:**
   - Background `ppr_warmup` job scheduler
 
@@ -77,28 +76,41 @@
   - `ppr_with_claim_filter()` for integrated PPR + claim filtering
 - **Tests:** 19 claim filter tests + 5 PPR integration tests
 
+### Ranking Signal Boosts (Complete)
+- **Location:** `helix-db/src/helix_engine/reranker/fusion/signal_boost.rs`
+- **Formula:** `Final Score = RRF(...) × salience × recency × confidence`
+- **Features:**
+  - `SignalBoostConfig` with configurable enable flags and half-life
+  - `salience_boost()` - returns salience value or 1.0 if None
+  - `confidence_boost()` - returns confidence value or 1.0 if None
+  - `recency_boost()` - exponential decay: `0.5^(age_days / half_life_days)`
+  - `apply_signal_boosts()` - applies all boosts and re-sorts results
+- **Tests:** 14 unit tests + 12 E2E tests with ground truth validation
+
 ### Prefilter Grammar Support
 - **Location:** `helix-db/src/grammar.pest`
 - Enabled for both SearchV and SearchHybrid
 
-### Test Coverage
-- 54 PPR tests (unit + integration + claim filter)
-- 19 hybrid search tests
-- 19 claim filter unit tests
-- 5 stress tests (all passing)
-- NetworkX-validated normalization
+---
+
+## Test Coverage Summary
+
+| Feature | Unit Tests | E2E Tests | Total |
+|---------|------------|-----------|-------|
+| PPR Algorithm | 10 | 19 | 29 |
+| PPR Warm Cache | 8 | 7 | 15 |
+| Claim Filtering | 13 | 5 | 18 |
+| Custom Edge Weights | 14 | 7 | 21 |
+| Signal Boosts | 14 | 12 | 26 |
+| SearchHybrid | 0 | 19 | 19 |
+| Stress Tests | 0 | 5 | 5 |
+| **Total** | **59** | **74** | **133** |
+
+All tests include NetworkX-validated ground truth verification where applicable.
 
 ---
 
 ## Not Implemented ❌
-
-### Ranking Signal Boosts
-- **Priority:** Medium
-- **Spec:** ONEIRON-ARCH-004 Section 4.2
-- **Formula:** `Final Score = RRF(...) × salience × recency × confidence`
-- **What's needed:**
-  - Post-RRF score adjustment layer
-  - Configurable boost functions
 
 ### PPR Warm Cache Phase 2
 - **Priority:** Low (Phase 1 complete)
@@ -115,11 +127,13 @@
 | PPR Core | `helix-db/src/helix_engine/graph/ppr.rs` |
 | PPR Cache | `helix-db/src/helix_engine/graph/ppr_cache.rs` |
 | Claim Filter | `helix-db/src/helix_engine/graph/claim_filter.rs` |
+| Signal Boosts | `helix-db/src/helix_engine/reranker/fusion/signal_boost.rs` |
 | RRF Reranker | `helix-db/src/helix_engine/reranker/fusion/rrf.rs` |
 | Source Steps | `helix-db/src/helixc/generator/source_steps.rs` |
 | Grammar | `helix-db/src/grammar.pest` |
 | PPR Tests | `helix-db/src/helix_engine/tests/traversal_tests/ppr_tests.rs` |
-| Claim Tests | `helix-db/src/helix_engine/graph/claim_filter.rs` (inline) |
+| Edge Weights E2E | `helix-db/src/helix_engine/tests/edge_weights_e2e_tests.rs` |
+| Signal Boost E2E | `helix-db/src/helix_engine/tests/signal_boost_e2e_tests.rs` |
 | Hybrid Tests | `helix-db/src/helix_engine/tests/hybrid_search_tests.rs` |
 
 ---
@@ -127,11 +141,9 @@
 ## Recent Commits
 
 ```
-[pending] Implement custom edge weights, PPR warm cache, claim filtering
+[pending] Implement ranking signal boosts with E2E tests
+04eb3751 Implement custom edge weights, PPR warm cache, claim filtering
 a56893b3 Fix stress test crashes caused by LMDB reader slot issues
 abcbe2b1 Simplify PPR and source_steps code
 b0c8d022 Change PPR default to normalize=true
-9706d0a6 Add optional normalization to PPR scores
-bf0735a4 Implement PPR enhancements: bidirectional, part_of limits, teleport
-255e611b Add comprehensive E2E tests for PPR and SearchHybrid
 ```
