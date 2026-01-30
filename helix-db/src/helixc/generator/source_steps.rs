@@ -10,6 +10,20 @@ use super::{
     utils::{GenRef, GeneratedValue},
 };
 
+fn format_pre_filter(pre_filter: &Option<Vec<BoExp>>) -> String {
+    match pre_filter {
+        Some(filters) => {
+            let formatted = filters
+                .iter()
+                .map(|f| format!("|v: &HVector, txn: &RoTxn| {f}"))
+                .collect::<Vec<_>>()
+                .join(", ");
+            format!("Some(&[{}])", formatted)
+        }
+        None => "None".to_string(),
+    }
+}
+
 #[derive(Clone, Debug)]
 pub enum SourceStep {
     /// Traversal starts from an identifier
@@ -96,54 +110,63 @@ pub struct AddE {
 }
 impl Display for AddE {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        // If either from or to is plural, we need to generate iteration code
+        let props = write_properties(&self.properties);
         match (self.from_is_plural, self.to_is_plural) {
             (false, false) => {
-                // Both singular - from and to already have .id() appended
                 write!(
                     f,
                     "add_edge({}, {}, {}, {}, false, {})",
-                    self.label,
-                    write_properties(&self.properties),
-                    self.from,
-                    self.to,
-                    self.is_unique
+                    self.label, props, self.from, self.to, self.is_unique
                 )
             }
             (true, false) => {
-                // From is plural - iterate over from, to already has .id()
                 write!(
                     f,
-                    "{{\n    let mut edge = Vec::new();\n    for from_val in {}.iter() {{\n        let e = G::new_mut(&db, &arena, &mut txn)\n            .add_edge({}, {}, from_val.id(), {}, false, {})\n            .collect_to_obj()?;\n        edge.push(e);\n    }}\n    edge\n}}",
-                    self.from,
-                    self.label,
-                    write_properties(&self.properties),
-                    self.to,
-                    self.is_unique
+                    "{{
+    let mut edge = Vec::new();
+    for from_val in {}.iter() {{
+        let e = G::new_mut(&db, &arena, &mut txn)
+            .add_edge({}, {}, from_val.id(), {}, false, {})
+            .collect_to_obj()?;
+        edge.push(e);
+    }}
+    edge
+}}",
+                    self.from, self.label, props, self.to, self.is_unique
                 )
             }
             (false, true) => {
-                // To is plural - iterate over to, from already has .id()
                 write!(
                     f,
-                    "{{\n    let mut edge = Vec::new();\n    for to_val in {}.iter() {{\n        let e = G::new_mut(&db, &arena, &mut txn)\n            .add_edge({}, {}, {}, to_val.id(), false, {})\n            .collect_to_obj()?;\n        edge.push(e);\n    }}\n    edge\n}}",
-                    self.to,
-                    self.label,
-                    write_properties(&self.properties),
-                    self.from,
-                    self.is_unique
+                    "{{
+    let mut edge = Vec::new();
+    for to_val in {}.iter() {{
+        let e = G::new_mut(&db, &arena, &mut txn)
+            .add_edge({}, {}, {}, to_val.id(), false, {})
+            .collect_to_obj()?;
+        edge.push(e);
+    }}
+    edge
+}}",
+                    self.to, self.label, props, self.from, self.is_unique
                 )
             }
             (true, true) => {
-                // Both plural - nested iteration
                 write!(
                     f,
-                    "{{\n    let mut edge = Vec::new();\n    for from_val in {}.iter() {{\n        for to_val in {}.iter() {{\n            let e = G::new_mut(&db, &arena, &mut txn)\n                .add_edge({}, {}, from_val.id(), to_val.id(), false, {})\n                .collect_to_obj()?;\n            edge.push(e);\n        }}\n    }}\n    edge\n}}",
-                    self.from,
-                    self.to,
-                    self.label,
-                    write_properties(&self.properties),
-                    self.is_unique,
+                    "{{
+    let mut edge = Vec::new();
+    for from_val in {}.iter() {{
+        for to_val in {}.iter() {{
+            let e = G::new_mut(&db, &arena, &mut txn)
+                .add_edge({}, {}, from_val.id(), to_val.id(), false, {})
+                .collect_to_obj()?;
+            edge.push(e);
+        }}
+    }}
+    edge
+}}",
+                    self.from, self.to, self.label, props, self.is_unique
                 )
             }
         }
@@ -162,17 +185,11 @@ pub struct UpsertN {
 
 impl Display for UpsertN {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let properties = if self.properties.is_some() {
-            &self.properties
-        } else {
-            &Some(Vec::new())
-        };
-        write!(
-            f,
-            "upsert_n({}, {})",
-            self.label,
-            write_properties_slice(properties)
-        )
+        let props = self.properties.as_ref().map_or_else(
+            || write_properties_slice(&Some(Vec::new())),
+            |_| write_properties_slice(&self.properties),
+        );
+        write!(f, "upsert_n({}, {})", self.label, props)
     }
 }
 
@@ -193,55 +210,47 @@ pub struct UpsertE {
 }
 impl Display for UpsertE {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let properties = if self.properties.is_some() {
-            &self.properties
-        } else {
-            &Some(Vec::new())
-        };
-        // If either from or to is plural, we need to generate iteration code
+        let props = self.properties.as_ref().map_or_else(
+            || write_properties_slice(&Some(Vec::new())),
+            |_| write_properties_slice(&self.properties),
+        );
         match (self.from_is_plural, self.to_is_plural) {
             (false, false) => {
-                // Both singular - from and to already have .id() appended
-                write!(
-                    f,
-                    "upsert_e({}, {}, {}, {})",
-                    self.label,
-                    self.from,
-                    self.to,
-                    write_properties_slice(properties),
-                )
+                write!(f, "upsert_e({}, {}, {}, {})", self.label, self.from, self.to, props)
             }
             (true, false) => {
-                // From is plural - iterate over from, to already has .id()
                 write!(
                     f,
-                    "{}.iter().map(|from_val| {{\n        G::new_mut(&db, &arena, &mut txn)\n        .upsert_e({}, from_val.id(), {}, {})\n        .collect_to_obj()\n    }}).collect::<Result<Vec<_>,_>>()?",
-                    self.from,
-                    self.label,
-                    self.to,
-                    write_properties_slice(properties),
+                    "{}.iter().map(|from_val| {{
+        G::new_mut(&db, &arena, &mut txn)
+        .upsert_e({}, from_val.id(), {}, {})
+        .collect_to_obj()
+    }}).collect::<Result<Vec<_>,_>>()?",
+                    self.from, self.label, self.to, props
                 )
             }
             (false, true) => {
-                // To is plural - iterate over to, from already has .id()
                 write!(
                     f,
-                    "{}.iter().map(|to_val| {{\n        G::new_mut(&db, &arena, &mut txn)\n        .upsert_e({}, {}, to_val.id(), {})\n        .collect_to_obj()\n    }}).collect::<Result<Vec<_>,_>>()?",
-                    self.to,
-                    self.label,
-                    self.from,
-                    write_properties_slice(properties),
+                    "{}.iter().map(|to_val| {{
+        G::new_mut(&db, &arena, &mut txn)
+        .upsert_e({}, {}, to_val.id(), {})
+        .collect_to_obj()
+    }}).collect::<Result<Vec<_>,_>>()?",
+                    self.to, self.label, self.from, props
                 )
             }
             (true, true) => {
-                // Both plural - nested iteration
                 write!(
                     f,
-                    "{}.iter().flat_map(|from_val| {{\n        {}.iter().map(move |to_val| {{\n            G::new_mut(&db, &arena, &mut txn)\n            .upsert_e({}, from_val.id(), to_val.id(), {})\n            .collect_to_obj()\n        }})\n    }}).collect::<Result<Vec<_>,_>>()?",
-                    self.from,
-                    self.to,
-                    self.label,
-                    write_properties_slice(properties),
+                    "{}.iter().flat_map(|from_val| {{
+        {}.iter().map(move |to_val| {{
+            G::new_mut(&db, &arena, &mut txn)
+            .upsert_e({}, from_val.id(), to_val.id(), {})
+            .collect_to_obj()
+        }})
+    }}).collect::<Result<Vec<_>,_>>()?",
+                    self.from, self.to, self.label, props
                 )
             }
         }
@@ -259,18 +268,11 @@ pub struct UpsertV {
 }
 impl Display for UpsertV {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let properties = if self.properties.is_some() {
-            &self.properties
-        } else {
-            &Some(Vec::new())
-        };
-        write!(
-            f,
-            "upsert_v({}, {}, {})",
-            self.vec,
-            self.label,
-            write_properties_slice(properties)
-        )
+        let props = self.properties.as_ref().map_or_else(
+            || write_properties_slice(&Some(Vec::new())),
+            |_| write_properties_slice(&self.properties),
+        );
+        write!(f, "upsert_v({}, {}, {})", self.vec, self.label, props)
     }
 }
 
@@ -440,25 +442,11 @@ pub struct SearchVector {
 
 impl Display for SearchVector {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match &self.pre_filter {
-            Some(pre_filter) => write!(
-                f,
-                "search_v::<fn(&HVector, &RoTxn) -> bool, _>({}, {}, {}, Some(&[{}]))",
-                self.vec,
-                self.k,
-                self.label,
-                pre_filter
-                    .iter()
-                    .map(|f| format!("|v: &HVector, txn: &RoTxn| {f}"))
-                    .collect::<Vec<_>>()
-                    .join(", ")
-            ),
-            None => write!(
-                f,
-                "search_v::<fn(&HVector, &RoTxn) -> bool, _>({}, {}, {}, None)",
-                self.vec, self.k, self.label,
-            ),
-        }
+        write!(
+            f,
+            "search_v::<fn(&HVector, &RoTxn) -> bool, _>({}, {}, {}, {})",
+            self.vec, self.k, self.label, format_pre_filter(&self.pre_filter)
+        )
     }
 }
 
@@ -478,49 +466,23 @@ pub struct SearchHybrid {
 
 impl Display for SearchHybrid {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{{\n")?;
         write!(
             f,
-            "    let __hybrid_vec_results: Vec<_> = G::new(&db, &txn, &arena)\n"
-        )?;
-        match &self.pre_filter {
-            Some(pre_filter) => write!(
-                f,
-                "        .search_v::<fn(&HVector, &RoTxn) -> bool, _>({}, {}, {}, Some(&[{}]))\n",
-                self.vec,
-                self.k,
-                self.label,
-                pre_filter
-                    .iter()
-                    .map(|pf| format!("|v: &HVector, txn: &RoTxn| {pf}"))
-                    .collect::<Vec<_>>()
-                    .join(", ")
-            )?,
-            None => write!(
-                f,
-                "        .search_v::<fn(&HVector, &RoTxn) -> bool, _>({}, {}, {}, None)\n",
-                self.vec, self.k, self.label,
-            )?,
-        }
-        write!(f, "        .collect::<Result<Vec<_>, _>>()?;\n")?;
-        write!(
-            f,
-            "    let __hybrid_bm25_results: Vec<_> = G::new(&db, &txn, &arena)\n"
-        )?;
-        write!(
-            f,
-            "        .search_bm25({}, &{}, {})?\n",
+            "{{
+    let __hybrid_vec_results: Vec<_> = G::new(&db, &txn, &arena)
+        .search_v::<fn(&HVector, &RoTxn) -> bool, _>({}, {}, {}, {})
+        .collect::<Result<Vec<_>, _>>()?;
+    let __hybrid_bm25_results: Vec<_> = G::new(&db, &txn, &arena)
+        .search_bm25({}, &{}, {})?
+        .collect::<Result<Vec<_>, _>>()?;
+    RRFReranker::fuse_lists(
+        vec![__hybrid_vec_results.into_iter(), __hybrid_bm25_results.into_iter()],
+        60.0
+    ).map_err(|e| GraphError::from(e.to_string()))?
+}}",
+            self.vec, self.k, self.label, format_pre_filter(&self.pre_filter),
             self.label, self.text_query, self.k
-        )?;
-        write!(f, "        .collect::<Result<Vec<_>, _>>()?;\n")?;
-        write!(f, "    RRFReranker::fuse_lists(\n")?;
-        write!(
-            f,
-            "        vec![__hybrid_vec_results.into_iter(), __hybrid_bm25_results.into_iter()],\n"
-        )?;
-        write!(f, "        60.0\n")?;
-        write!(f, "    ).map_err(|e| GraphError::from(e.to_string()))?\n")?;
-        write!(f, "}}")
+        )
     }
 }
 
@@ -536,54 +498,32 @@ pub struct PPR {
 
 impl Display for PPR {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let depth = match &self.depth {
-            Some(d) => format!("{d}"),
-            None => "3".to_string(),
-        };
-        let damping = match &self.damping {
-            Some(d) => format!("{d}"),
-            None => "0.85".to_string(),
-        };
-        write!(f, "{{\n")?;
+        let depth = self.depth.as_ref().map_or("3".to_string(), |d| format!("{d}"));
+        let damping = self.damping.as_ref().map_or("0.85".to_string(), |d| format!("{d}"));
         write!(
             f,
-            "    use helix_db::helix_engine::storage_core::storage_methods::StorageMethods;\n"
-        )?;
-        write!(
-            f,
-            "    let ppr_universe: std::collections::HashSet<u128> = {}.iter().map(|id| **id).collect();\n",
-            self.universe
-        )?;
-        write!(
-            f,
-            "    let ppr_seeds: Vec<u128> = {}.iter().map(|id| **id).collect();\n",
-            self.seeds
-        )?;
-        write!(
-            f,
-            "    let ppr_results = helix_db::helix_engine::graph::ppr::ppr_with_storage(\n"
-        )?;
-        write!(f, "        &db,\n")?;
-        write!(f, "        &txn,\n")?;
-        write!(f, "        &arena,\n")?;
-        write!(f, "        &ppr_universe,\n")?;
-        write!(f, "        &ppr_seeds,\n")?;
-        write!(f, "        &std::collections::HashMap::new(),\n")?;
-        write!(f, "        {} as usize,\n", depth)?;
-        write!(f, "        {},\n", damping)?;
-        write!(f, "        {} as usize,\n", self.limit)?;
-        write!(f, "        true,\n")?;
-        write!(f, "    );\n")?;
-        write!(
-            f,
-            "    ppr_results.into_iter().filter_map(|(node_id, _score)| {{\n"
-        )?;
-        write!(
-            f,
-            "        db.get_node(&txn, &node_id, &arena).ok().map(TraversalValue::Node)\n"
-        )?;
-        write!(f, "    }}).collect::<Vec<_>>()\n")?;
-        write!(f, "}}")
+            "{{
+    use helix_db::helix_engine::storage_core::storage_methods::StorageMethods;
+    let ppr_universe: std::collections::HashSet<u128> = {}.iter().map(|id| **id).collect();
+    let ppr_seeds: Vec<u128> = {}.iter().map(|id| **id).collect();
+    let ppr_results = helix_db::helix_engine::graph::ppr::ppr_with_storage(
+        &db,
+        &txn,
+        &arena,
+        &ppr_universe,
+        &ppr_seeds,
+        &std::collections::HashMap::new(),
+        {} as usize,
+        {},
+        {} as usize,
+        true,
+    );
+    ppr_results.into_iter().filter_map(|(node_id, _score)| {{
+        db.get_node(&txn, &node_id, &arena).ok().map(TraversalValue::Node)
+    }}).collect::<Vec<_>>()
+}}",
+            self.universe, self.seeds, depth, damping, self.limit
+        )
     }
 }
 

@@ -210,103 +210,35 @@ pub fn ppr_with_storage(
                 continue;
             }
 
-            let out_prefix = node_id.to_be_bytes().to_vec();
-            let iter = match storage.out_edges_db.prefix_iter(txn, &out_prefix) {
-                Ok(iter) => iter,
-                Err(_) => continue,
-            };
+            let prefix = node_id.to_be_bytes().to_vec();
 
-            for result in iter {
-                let (_, value) = match result {
-                    Ok((key, value)) => (key, value),
-                    Err(_) => continue,
-                };
-                let (edge_id, target_node) = match HelixGraphStorage::unpack_adj_edge_data(value) {
-                    Ok((edge_id, to_node)) => (edge_id, to_node),
-                    Err(_) => continue,
-                };
+            propagate_edges(
+                storage.out_edges_db.prefix_iter(txn, &prefix).ok(),
+                storage,
+                txn,
+                arena,
+                universe_ids,
+                edge_weights,
+                part_of_hops,
+                node_score,
+                damping,
+                &mut scores,
+                &mut next_frontier,
+            );
 
-                if !universe_ids.contains(&target_node) {
-                    continue;
-                }
-
-                let edge = match storage.get_edge(txn, &edge_id, arena) {
-                    Ok(edge) => edge,
-                    Err(_) => continue,
-                };
-                let edge_label = edge.label;
-
-                let weight = get_edge_weight(edge_label, edge_weights);
-
-                if weight <= 0.0 {
-                    continue;
-                }
-
-                let is_part_of = edge_label == "part_of";
-                if is_part_of && part_of_hops >= PART_OF_MAX_HOPS {
-                    continue;
-                }
-                let next_part_of_hops = if is_part_of {
-                    part_of_hops + 1
-                } else {
-                    part_of_hops
-                };
-
-                let propagated_score = node_score * weight * damping;
-                *scores.entry(target_node).or_insert(0.0) += propagated_score;
-                *next_frontier
-                    .entry((target_node, next_part_of_hops))
-                    .or_insert(0.0) += propagated_score;
-            }
-
-            let in_prefix = node_id.to_be_bytes().to_vec();
-            let iter = match storage.in_edges_db.prefix_iter(txn, &in_prefix) {
-                Ok(iter) => iter,
-                Err(_) => continue,
-            };
-
-            for result in iter {
-                let (_, value) = match result {
-                    Ok((key, value)) => (key, value),
-                    Err(_) => continue,
-                };
-                let (edge_id, source_node) = match HelixGraphStorage::unpack_adj_edge_data(value) {
-                    Ok((edge_id, from_node)) => (edge_id, from_node),
-                    Err(_) => continue,
-                };
-
-                if !universe_ids.contains(&source_node) {
-                    continue;
-                }
-
-                let edge = match storage.get_edge(txn, &edge_id, arena) {
-                    Ok(edge) => edge,
-                    Err(_) => continue,
-                };
-                let edge_label = edge.label;
-
-                let weight = get_edge_weight(edge_label, edge_weights);
-
-                if weight <= 0.0 {
-                    continue;
-                }
-
-                let is_part_of = edge_label == "part_of";
-                if is_part_of && part_of_hops >= PART_OF_MAX_HOPS {
-                    continue;
-                }
-                let next_part_of_hops = if is_part_of {
-                    part_of_hops + 1
-                } else {
-                    part_of_hops
-                };
-
-                let propagated_score = node_score * weight * damping;
-                *scores.entry(source_node).or_insert(0.0) += propagated_score;
-                *next_frontier
-                    .entry((source_node, next_part_of_hops))
-                    .or_insert(0.0) += propagated_score;
-            }
+            propagate_edges(
+                storage.in_edges_db.prefix_iter(txn, &prefix).ok(),
+                storage,
+                txn,
+                arena,
+                universe_ids,
+                edge_weights,
+                part_of_hops,
+                node_score,
+                damping,
+                &mut scores,
+                &mut next_frontier,
+            );
         }
 
         if !seeds_in_universe.is_empty() {
@@ -353,6 +285,62 @@ pub fn get_edge_weight(edge_label: &str, edge_weights: &HashMap<String, f64>) ->
                 .map(|(_, w)| *w)
         })
         .unwrap_or(DEFAULT_EDGE_WEIGHT)
+}
+
+type AdjIterator<'a> = heed3::RoPrefix<'a, heed3::types::Bytes, heed3::types::Bytes>;
+
+fn propagate_edges(
+    iter: Option<AdjIterator>,
+    storage: &HelixGraphStorage,
+    txn: &RoTxn,
+    arena: &bumpalo::Bump,
+    universe_ids: &HashSet<u128>,
+    edge_weights: &HashMap<String, f64>,
+    part_of_hops: usize,
+    node_score: f64,
+    damping: f64,
+    scores: &mut HashMap<u128, f64>,
+    next_frontier: &mut HashMap<(u128, usize), f64>,
+) {
+    let Some(iter) = iter else { return };
+
+    for result in iter {
+        let Ok((_, value)) = result else { continue };
+        let Ok((edge_id, neighbor)) = HelixGraphStorage::unpack_adj_edge_data(value) else {
+            continue;
+        };
+
+        if !universe_ids.contains(&neighbor) {
+            continue;
+        }
+
+        let Ok(edge) = storage.get_edge(txn, &edge_id, arena) else {
+            continue;
+        };
+        let edge_label = edge.label;
+
+        let weight = get_edge_weight(edge_label, edge_weights);
+        if weight <= 0.0 {
+            continue;
+        }
+
+        let is_part_of = edge_label == "part_of";
+        if is_part_of && part_of_hops >= PART_OF_MAX_HOPS {
+            continue;
+        }
+
+        let next_part_of_hops = if is_part_of {
+            part_of_hops + 1
+        } else {
+            part_of_hops
+        };
+
+        let propagated_score = node_score * weight * damping;
+        *scores.entry(neighbor).or_insert(0.0) += propagated_score;
+        *next_frontier
+            .entry((neighbor, next_part_of_hops))
+            .or_insert(0.0) += propagated_score;
+    }
 }
 
 #[cfg(test)]
