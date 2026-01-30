@@ -545,10 +545,24 @@ impl Display for PPR {
             None => "0.85".to_string(),
         };
         write!(f, "{{\n")?;
-        write!(f, "    use helix_db::helix_engine::storage_core::storage_methods::StorageMethods;\n")?;
-        write!(f, "    let ppr_universe: std::collections::HashSet<u128> = {}.iter().map(|id| **id).collect();\n", self.universe)?;
-        write!(f, "    let ppr_seeds: Vec<u128> = {}.iter().map(|id| **id).collect();\n", self.seeds)?;
-        write!(f, "    let ppr_results = helix_db::helix_engine::graph::ppr::ppr_with_storage(\n")?;
+        write!(
+            f,
+            "    use helix_db::helix_engine::storage_core::storage_methods::StorageMethods;\n"
+        )?;
+        write!(
+            f,
+            "    let ppr_universe: std::collections::HashSet<u128> = {}.iter().map(|id| **id).collect();\n",
+            self.universe
+        )?;
+        write!(
+            f,
+            "    let ppr_seeds: Vec<u128> = {}.iter().map(|id| **id).collect();\n",
+            self.seeds
+        )?;
+        write!(
+            f,
+            "    let ppr_results = helix_db::helix_engine::graph::ppr::ppr_with_storage(\n"
+        )?;
         write!(f, "        &db,\n")?;
         write!(f, "        &txn,\n")?;
         write!(f, "        &arena,\n")?;
@@ -559,8 +573,14 @@ impl Display for PPR {
         write!(f, "        {},\n", damping)?;
         write!(f, "        {} as usize,\n", self.limit)?;
         write!(f, "    );\n")?;
-        write!(f, "    ppr_results.into_iter().filter_map(|(node_id, _score)| {{\n")?;
-        write!(f, "        db.get_node(&txn, &node_id, &arena).ok().map(TraversalValue::Node)\n")?;
+        write!(
+            f,
+            "    ppr_results.into_iter().filter_map(|(node_id, _score)| {{\n"
+        )?;
+        write!(
+            f,
+            "        db.get_node(&txn, &node_id, &arena).ok().map(TraversalValue::Node)\n"
+        )?;
         write!(f, "    }}).collect::<Vec<_>>()\n")?;
         write!(f, "}}")
     }

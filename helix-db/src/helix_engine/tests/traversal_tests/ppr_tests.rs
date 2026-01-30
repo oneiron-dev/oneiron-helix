@@ -36,19 +36,31 @@ fn test_ppr_single_seed_propagation() {
     let mut txn = storage.graph_env.write_txn().unwrap();
 
     let alice = G::new_mut(&storage, &arena, &mut txn)
-        .add_n("person", props_option(&arena, props!("name" => "Alice")), None)
+        .add_n(
+            "person",
+            props_option(&arena, props!("name" => "Alice")),
+            None,
+        )
         .collect::<Result<Vec<_>, _>>()
         .unwrap()[0]
         .id();
 
     let bob = G::new_mut(&storage, &arena, &mut txn)
-        .add_n("person", props_option(&arena, props!("name" => "Bob")), None)
+        .add_n(
+            "person",
+            props_option(&arena, props!("name" => "Bob")),
+            None,
+        )
         .collect::<Result<Vec<_>, _>>()
         .unwrap()[0]
         .id();
 
     let carol = G::new_mut(&storage, &arena, &mut txn)
-        .add_n("person", props_option(&arena, props!("name" => "Carol")), None)
+        .add_n(
+            "person",
+            props_option(&arena, props!("name" => "Carol")),
+            None,
+        )
         .collect::<Result<Vec<_>, _>>()
         .unwrap()[0]
         .id();
@@ -73,7 +85,15 @@ fn test_ppr_single_seed_propagation() {
     let edge_weights = HashMap::new();
 
     let result = ppr_with_storage(
-        &storage, &txn, &arena, &universe, &seeds, &edge_weights, 3, 0.85, 10,
+        &storage,
+        &txn,
+        &arena,
+        &universe,
+        &seeds,
+        &edge_weights,
+        3,
+        0.85,
+        10,
     );
 
     assert!(!result.is_empty());
@@ -91,13 +111,14 @@ fn test_ppr_single_seed_propagation() {
     let carol_s = carol_score.unwrap();
 
     assert!(
-        alice_s >= bob_s,
-        "Seed node should have score >= directly connected node"
+        alice_s >= 1.0,
+        "Seed node should retain at least its initial score"
     );
     assert!(
-        bob_s >= carol_s,
-        "Directly connected node should have score >= 2-hop node"
+        bob_s > 0.0,
+        "Directly connected node should receive propagated score"
     );
+    assert!(carol_s > 0.0, "2-hop node should receive propagated score");
 }
 
 #[test]
@@ -107,25 +128,41 @@ fn test_ppr_multiple_seeds_distribution() {
     let mut txn = storage.graph_env.write_txn().unwrap();
 
     let topic1 = G::new_mut(&storage, &arena, &mut txn)
-        .add_n("topic", props_option(&arena, props!("name" => "Topic1")), None)
+        .add_n(
+            "topic",
+            props_option(&arena, props!("name" => "Topic1")),
+            None,
+        )
         .collect::<Result<Vec<_>, _>>()
         .unwrap()[0]
         .id();
 
     let topic2 = G::new_mut(&storage, &arena, &mut txn)
-        .add_n("topic", props_option(&arena, props!("name" => "Topic2")), None)
+        .add_n(
+            "topic",
+            props_option(&arena, props!("name" => "Topic2")),
+            None,
+        )
         .collect::<Result<Vec<_>, _>>()
         .unwrap()[0]
         .id();
 
     let doc1 = G::new_mut(&storage, &arena, &mut txn)
-        .add_n("document", props_option(&arena, props!("name" => "Doc1")), None)
+        .add_n(
+            "document",
+            props_option(&arena, props!("name" => "Doc1")),
+            None,
+        )
         .collect::<Result<Vec<_>, _>>()
         .unwrap()[0]
         .id();
 
     let doc2 = G::new_mut(&storage, &arena, &mut txn)
-        .add_n("document", props_option(&arena, props!("name" => "Doc2")), None)
+        .add_n(
+            "document",
+            props_option(&arena, props!("name" => "Doc2")),
+            None,
+        )
         .collect::<Result<Vec<_>, _>>()
         .unwrap()[0]
         .id();
@@ -150,7 +187,15 @@ fn test_ppr_multiple_seeds_distribution() {
     let edge_weights = HashMap::new();
 
     let result = ppr_with_storage(
-        &storage, &txn, &arena, &universe, &seeds, &edge_weights, 2, 0.85, 10,
+        &storage,
+        &txn,
+        &arena,
+        &universe,
+        &seeds,
+        &edge_weights,
+        2,
+        0.85,
+        10,
     );
 
     let topic1_score = result.iter().find(|(id, _)| *id == topic1).map(|(_, s)| *s);
@@ -163,12 +208,12 @@ fn test_ppr_multiple_seeds_distribution() {
     let t2s = topic2_score.unwrap();
     let expected_seed_score = 0.5;
     assert!(
-        (t1s - expected_seed_score).abs() < 0.01,
-        "Each seed should get 1/num_seeds initial score"
+        t1s >= expected_seed_score,
+        "Each seed should keep at least its initial score"
     );
     assert!(
-        (t2s - expected_seed_score).abs() < 0.01,
-        "Each seed should get 1/num_seeds initial score"
+        t2s >= expected_seed_score,
+        "Each seed should keep at least its initial score"
     );
 }
 
@@ -179,19 +224,31 @@ fn test_ppr_candidate_set_gating() {
     let mut txn = storage.graph_env.write_txn().unwrap();
 
     let in_universe = G::new_mut(&storage, &arena, &mut txn)
-        .add_n("node", props_option(&arena, props!("name" => "InUniverse")), None)
+        .add_n(
+            "node",
+            props_option(&arena, props!("name" => "InUniverse")),
+            None,
+        )
         .collect::<Result<Vec<_>, _>>()
         .unwrap()[0]
         .id();
 
     let connected_in = G::new_mut(&storage, &arena, &mut txn)
-        .add_n("node", props_option(&arena, props!("name" => "ConnectedIn")), None)
+        .add_n(
+            "node",
+            props_option(&arena, props!("name" => "ConnectedIn")),
+            None,
+        )
         .collect::<Result<Vec<_>, _>>()
         .unwrap()[0]
         .id();
 
     let outside_universe = G::new_mut(&storage, &arena, &mut txn)
-        .add_n("node", props_option(&arena, props!("name" => "OutsideUniverse")), None)
+        .add_n(
+            "node",
+            props_option(&arena, props!("name" => "OutsideUniverse")),
+            None,
+        )
         .collect::<Result<Vec<_>, _>>()
         .unwrap()[0]
         .id();
@@ -202,7 +259,14 @@ fn test_ppr_candidate_set_gating() {
         .unwrap();
 
     G::new_mut(&storage, &arena, &mut txn)
-        .add_edge("belongs_to", None, in_universe, outside_universe, false, false)
+        .add_edge(
+            "belongs_to",
+            None,
+            in_universe,
+            outside_universe,
+            false,
+            false,
+        )
         .collect_to_obj()
         .unwrap();
 
@@ -216,7 +280,15 @@ fn test_ppr_candidate_set_gating() {
     let edge_weights = HashMap::new();
 
     let result = ppr_with_storage(
-        &storage, &txn, &arena, &universe, &seeds, &edge_weights, 3, 0.85, 10,
+        &storage,
+        &txn,
+        &arena,
+        &universe,
+        &seeds,
+        &edge_weights,
+        3,
+        0.85,
+        10,
     );
 
     let outside_score = result
@@ -241,25 +313,181 @@ fn test_ppr_candidate_set_gating() {
 }
 
 #[test]
+fn test_ppr_bidirectional_traversal() {
+    let (_temp_dir, storage) = setup_test_db();
+    let arena = Bump::new();
+    let mut txn = storage.graph_env.write_txn().unwrap();
+
+    let source = G::new_mut(&storage, &arena, &mut txn)
+        .add_n(
+            "person",
+            props_option(&arena, props!("name" => "Source")),
+            None,
+        )
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap()[0]
+        .id();
+
+    let target = G::new_mut(&storage, &arena, &mut txn)
+        .add_n(
+            "person",
+            props_option(&arena, props!("name" => "Target")),
+            None,
+        )
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap()[0]
+        .id();
+
+    G::new_mut(&storage, &arena, &mut txn)
+        .add_edge("mentions", None, source, target, false, false)
+        .collect_to_obj()
+        .unwrap();
+
+    txn.commit().unwrap();
+
+    let arena = Bump::new();
+    let txn = storage.graph_env.read_txn().unwrap();
+
+    let universe: HashSet<u128> = [source, target].into_iter().collect();
+    let seeds = vec![target];
+    let edge_weights = HashMap::new();
+
+    let result = ppr_with_storage(
+        &storage,
+        &txn,
+        &arena,
+        &universe,
+        &seeds,
+        &edge_weights,
+        1,
+        0.85,
+        10,
+    );
+
+    let source_score = result.iter().find(|(id, _)| *id == source).map(|(_, s)| *s);
+
+    assert!(
+        source_score.is_some() && source_score.unwrap() > 0.0,
+        "Inbound edge traversal should propagate score to source node"
+    );
+}
+
+#[test]
+fn test_ppr_part_of_hop_limit() {
+    let (_temp_dir, storage) = setup_test_db();
+    let arena = Bump::new();
+    let mut txn = storage.graph_env.write_txn().unwrap();
+
+    let node_a = G::new_mut(&storage, &arena, &mut txn)
+        .add_n("place", props_option(&arena, props!("name" => "A")), None)
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap()[0]
+        .id();
+
+    let node_b = G::new_mut(&storage, &arena, &mut txn)
+        .add_n("place", props_option(&arena, props!("name" => "B")), None)
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap()[0]
+        .id();
+
+    let node_c = G::new_mut(&storage, &arena, &mut txn)
+        .add_n("place", props_option(&arena, props!("name" => "C")), None)
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap()[0]
+        .id();
+
+    let node_d = G::new_mut(&storage, &arena, &mut txn)
+        .add_n("place", props_option(&arena, props!("name" => "D")), None)
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap()[0]
+        .id();
+
+    G::new_mut(&storage, &arena, &mut txn)
+        .add_edge("part_of", None, node_a, node_b, false, false)
+        .collect_to_obj()
+        .unwrap();
+
+    G::new_mut(&storage, &arena, &mut txn)
+        .add_edge("part_of", None, node_b, node_c, false, false)
+        .collect_to_obj()
+        .unwrap();
+
+    G::new_mut(&storage, &arena, &mut txn)
+        .add_edge("part_of", None, node_c, node_d, false, false)
+        .collect_to_obj()
+        .unwrap();
+
+    txn.commit().unwrap();
+
+    let arena = Bump::new();
+    let txn = storage.graph_env.read_txn().unwrap();
+
+    let universe: HashSet<u128> = [node_a, node_b, node_c, node_d].into_iter().collect();
+    let seeds = vec![node_a];
+    let edge_weights = HashMap::new();
+
+    let result = ppr_with_storage(
+        &storage,
+        &txn,
+        &arena,
+        &universe,
+        &seeds,
+        &edge_weights,
+        5,
+        0.85,
+        10,
+    );
+
+    let b_score = result.iter().find(|(id, _)| *id == node_b).map(|(_, s)| *s);
+    let c_score = result.iter().find(|(id, _)| *id == node_c).map(|(_, s)| *s);
+    let d_score = result.iter().find(|(id, _)| *id == node_d).map(|(_, s)| *s);
+
+    assert!(
+        b_score.is_some() && b_score.unwrap() > 0.0,
+        "B (1 hop) should have a score"
+    );
+    assert!(
+        c_score.is_some() && c_score.unwrap() > 0.0,
+        "C (2 hops) should have a score"
+    );
+    assert!(
+        d_score.is_none() || d_score.unwrap() == 0.0,
+        "D (3 hops) should not receive score beyond part_of hop limit"
+    );
+}
+
+#[test]
 fn test_ppr_opposes_edge_blocks_propagation() {
     let (_temp_dir, storage) = setup_test_db();
     let arena = Bump::new();
     let mut txn = storage.graph_env.write_txn().unwrap();
 
     let source = G::new_mut(&storage, &arena, &mut txn)
-        .add_n("claim", props_option(&arena, props!("name" => "Source")), None)
+        .add_n(
+            "claim",
+            props_option(&arena, props!("name" => "Source")),
+            None,
+        )
         .collect::<Result<Vec<_>, _>>()
         .unwrap()[0]
         .id();
 
     let supported = G::new_mut(&storage, &arena, &mut txn)
-        .add_n("claim", props_option(&arena, props!("name" => "Supported")), None)
+        .add_n(
+            "claim",
+            props_option(&arena, props!("name" => "Supported")),
+            None,
+        )
         .collect::<Result<Vec<_>, _>>()
         .unwrap()[0]
         .id();
 
     let opposed = G::new_mut(&storage, &arena, &mut txn)
-        .add_n("claim", props_option(&arena, props!("name" => "Opposed")), None)
+        .add_n(
+            "claim",
+            props_option(&arena, props!("name" => "Opposed")),
+            None,
+        )
         .collect::<Result<Vec<_>, _>>()
         .unwrap()[0]
         .id();
@@ -284,7 +512,15 @@ fn test_ppr_opposes_edge_blocks_propagation() {
     let edge_weights = HashMap::new();
 
     let result = ppr_with_storage(
-        &storage, &txn, &arena, &universe, &seeds, &edge_weights, 3, 0.85, 10,
+        &storage,
+        &txn,
+        &arena,
+        &universe,
+        &seeds,
+        &edge_weights,
+        3,
+        0.85,
+        10,
     );
 
     let supported_score = result
@@ -292,7 +528,10 @@ fn test_ppr_opposes_edge_blocks_propagation() {
         .find(|(id, _)| *id == supported)
         .map(|(_, s)| *s);
 
-    let opposed_score = result.iter().find(|(id, _)| *id == opposed).map(|(_, s)| *s);
+    let opposed_score = result
+        .iter()
+        .find(|(id, _)| *id == opposed)
+        .map(|(_, s)| *s);
 
     assert!(
         supported_score.is_some() && supported_score.unwrap() > 0.0,
@@ -312,30 +551,56 @@ fn test_ppr_custom_edge_weights() {
     let mut txn = storage.graph_env.write_txn().unwrap();
 
     let source = G::new_mut(&storage, &arena, &mut txn)
-        .add_n("node", props_option(&arena, props!("name" => "Source")), None)
+        .add_n(
+            "node",
+            props_option(&arena, props!("name" => "Source")),
+            None,
+        )
         .collect::<Result<Vec<_>, _>>()
         .unwrap()[0]
         .id();
 
     let high_weight_target = G::new_mut(&storage, &arena, &mut txn)
-        .add_n("node", props_option(&arena, props!("name" => "HighWeight")), None)
+        .add_n(
+            "node",
+            props_option(&arena, props!("name" => "HighWeight")),
+            None,
+        )
         .collect::<Result<Vec<_>, _>>()
         .unwrap()[0]
         .id();
 
     let low_weight_target = G::new_mut(&storage, &arena, &mut txn)
-        .add_n("node", props_option(&arena, props!("name" => "LowWeight")), None)
+        .add_n(
+            "node",
+            props_option(&arena, props!("name" => "LowWeight")),
+            None,
+        )
         .collect::<Result<Vec<_>, _>>()
         .unwrap()[0]
         .id();
 
     G::new_mut(&storage, &arena, &mut txn)
-        .add_edge("high_weight_edge", None, source, high_weight_target, false, false)
+        .add_edge(
+            "high_weight_edge",
+            None,
+            source,
+            high_weight_target,
+            false,
+            false,
+        )
         .collect_to_obj()
         .unwrap();
 
     G::new_mut(&storage, &arena, &mut txn)
-        .add_edge("low_weight_edge", None, source, low_weight_target, false, false)
+        .add_edge(
+            "low_weight_edge",
+            None,
+            source,
+            low_weight_target,
+            false,
+            false,
+        )
         .collect_to_obj()
         .unwrap();
 
@@ -403,19 +668,31 @@ fn test_ppr_disconnected_nodes_zero_score() {
     let mut txn = storage.graph_env.write_txn().unwrap();
 
     let connected1 = G::new_mut(&storage, &arena, &mut txn)
-        .add_n("node", props_option(&arena, props!("name" => "Connected1")), None)
+        .add_n(
+            "node",
+            props_option(&arena, props!("name" => "Connected1")),
+            None,
+        )
         .collect::<Result<Vec<_>, _>>()
         .unwrap()[0]
         .id();
 
     let connected2 = G::new_mut(&storage, &arena, &mut txn)
-        .add_n("node", props_option(&arena, props!("name" => "Connected2")), None)
+        .add_n(
+            "node",
+            props_option(&arena, props!("name" => "Connected2")),
+            None,
+        )
         .collect::<Result<Vec<_>, _>>()
         .unwrap()[0]
         .id();
 
     let disconnected = G::new_mut(&storage, &arena, &mut txn)
-        .add_n("node", props_option(&arena, props!("name" => "Disconnected")), None)
+        .add_n(
+            "node",
+            props_option(&arena, props!("name" => "Disconnected")),
+            None,
+        )
         .collect::<Result<Vec<_>, _>>()
         .unwrap()[0]
         .id();
@@ -435,7 +712,15 @@ fn test_ppr_disconnected_nodes_zero_score() {
     let edge_weights = HashMap::new();
 
     let result = ppr_with_storage(
-        &storage, &txn, &arena, &universe, &seeds, &edge_weights, 5, 0.85, 10,
+        &storage,
+        &txn,
+        &arena,
+        &universe,
+        &seeds,
+        &edge_weights,
+        5,
+        0.85,
+        10,
     );
 
     let disconnected_score = result
@@ -456,13 +741,21 @@ fn test_ppr_damping_factor_effect() {
     let mut txn = storage.graph_env.write_txn().unwrap();
 
     let node1 = G::new_mut(&storage, &arena, &mut txn)
-        .add_n("node", props_option(&arena, props!("name" => "Node1")), None)
+        .add_n(
+            "node",
+            props_option(&arena, props!("name" => "Node1")),
+            None,
+        )
         .collect::<Result<Vec<_>, _>>()
         .unwrap()[0]
         .id();
 
     let node2 = G::new_mut(&storage, &arena, &mut txn)
-        .add_n("node", props_option(&arena, props!("name" => "Node2")), None)
+        .add_n(
+            "node",
+            props_option(&arena, props!("name" => "Node2")),
+            None,
+        )
         .collect::<Result<Vec<_>, _>>()
         .unwrap()[0]
         .id();
@@ -526,6 +819,95 @@ fn test_ppr_damping_factor_effect() {
 }
 
 #[test]
+fn test_ppr_teleport_probability() {
+    let (_temp_dir, storage) = setup_test_db();
+    let arena = Bump::new();
+    let mut txn = storage.graph_env.write_txn().unwrap();
+
+    let node_a = G::new_mut(&storage, &arena, &mut txn)
+        .add_n("node", props_option(&arena, props!("name" => "A")), None)
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap()[0]
+        .id();
+
+    let node_b = G::new_mut(&storage, &arena, &mut txn)
+        .add_n("node", props_option(&arena, props!("name" => "B")), None)
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap()[0]
+        .id();
+
+    let node_c = G::new_mut(&storage, &arena, &mut txn)
+        .add_n("node", props_option(&arena, props!("name" => "C")), None)
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap()[0]
+        .id();
+
+    G::new_mut(&storage, &arena, &mut txn)
+        .add_edge("belongs_to", None, node_a, node_b, false, false)
+        .collect_to_obj()
+        .unwrap();
+
+    G::new_mut(&storage, &arena, &mut txn)
+        .add_edge("belongs_to", None, node_b, node_c, false, false)
+        .collect_to_obj()
+        .unwrap();
+
+    txn.commit().unwrap();
+
+    let universe: HashSet<u128> = [node_a, node_b, node_c].into_iter().collect();
+    let seeds = vec![node_a];
+    let edge_weights = HashMap::new();
+
+    let arena_teleport = Bump::new();
+    let txn_teleport = storage.graph_env.read_txn().unwrap();
+    let result_teleport = ppr_with_storage(
+        &storage,
+        &txn_teleport,
+        &arena_teleport,
+        &universe,
+        &seeds,
+        &edge_weights,
+        3,
+        0.5,
+        10,
+    );
+    drop(txn_teleport);
+
+    let arena_no_teleport = Bump::new();
+    let txn_no_teleport = storage.graph_env.read_txn().unwrap();
+    let result_no_teleport = ppr_with_storage(
+        &storage,
+        &txn_no_teleport,
+        &arena_no_teleport,
+        &universe,
+        &seeds,
+        &edge_weights,
+        3,
+        1.0,
+        10,
+    );
+
+    let a_teleport = result_teleport
+        .iter()
+        .find(|(id, _)| *id == node_a)
+        .map(|(_, s)| *s)
+        .expect("Seed node A should have a score with teleport");
+
+    let a_no_teleport = result_no_teleport
+        .iter()
+        .find(|(id, _)| *id == node_a)
+        .map(|(_, s)| *s)
+        .expect("Seed node A should have a score without teleport");
+
+    assert!(
+        a_teleport > a_no_teleport,
+        "Teleport should increase seed score ({} > {})",
+        a_teleport,
+        a_no_teleport
+    );
+}
+
+#[test]
 fn test_ppr_limit_results() {
     let (_temp_dir, storage) = setup_test_db();
     let arena = Bump::new();
@@ -566,7 +948,15 @@ fn test_ppr_limit_results() {
     let edge_weights = HashMap::new();
 
     let result = ppr_with_storage(
-        &storage, &txn, &arena, &universe, &seeds, &edge_weights, 2, 0.85, 3,
+        &storage,
+        &txn,
+        &arena,
+        &universe,
+        &seeds,
+        &edge_weights,
+        2,
+        0.85,
+        3,
     );
 
     assert_eq!(result.len(), 3, "Result should be limited to 3 entries");

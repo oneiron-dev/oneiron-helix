@@ -3,7 +3,9 @@ use crate::helixc::analyzer::utils::{
     DEFAULT_VAR_NAME, VariableInfo, check_identifier_is_fieldtype,
 };
 use crate::helixc::generator::bool_ops::{Contains, IsIn, PropertyEq, PropertyNeq};
-use crate::helixc::generator::source_steps::{PPR as GeneratedPPR, SearchHybrid as GeneratedSearchHybrid, SearchVector, VFromID, VFromType};
+use crate::helixc::generator::source_steps::{
+    PPR as GeneratedPPR, SearchHybrid as GeneratedSearchHybrid, SearchVector, VFromID, VFromType,
+};
 use crate::helixc::generator::traversal_steps::{AggregateBy, GroupBy};
 use crate::helixc::generator::utils::{EmbedData, VecData};
 use crate::{
@@ -877,18 +879,15 @@ pub(crate) fn validate_traversal<'a>(
                     };
                     match stmt {
                         GeneratedStatement::Traversal(tr) => {
-                            pre_filter_traversal
-                                .steps
-                                .push(Separator::Period(GeneratedStep::Where(Where::Ref(
-                                    WhereRef {
-                                        expr: BoExp::Expr(tr),
-                                    },
-                                ))));
+                            pre_filter_traversal.steps.push(Separator::Period(
+                                GeneratedStep::Where(Where::Ref(WhereRef {
+                                    expr: BoExp::Expr(tr),
+                                })),
+                            ));
                         }
                         GeneratedStatement::BoExp(expr) => {
-                            pre_filter_traversal
-                                .steps
-                                .push(Separator::Period(GeneratedStep::Where(match expr {
+                            pre_filter_traversal.steps.push(Separator::Period(
+                                GeneratedStep::Where(match expr {
                                     BoExp::Exists(mut traversal) => {
                                         traversal.should_collect = ShouldCollect::No;
                                         Where::Ref(WhereRef {
@@ -896,7 +895,8 @@ pub(crate) fn validate_traversal<'a>(
                                         })
                                     }
                                     _ => Where::Ref(WhereRef { expr }),
-                                })));
+                                }),
+                            ));
                         }
                         _ => {
                             return None;
@@ -923,15 +923,14 @@ pub(crate) fn validate_traversal<'a>(
 
             gen_traversal.traversal_type = TraversalType::Standalone;
             gen_traversal.should_collect = ShouldCollect::No;
-            gen_traversal.source_step = Separator::Empty(SourceStep::SearchHybrid(
-                GeneratedSearchHybrid {
+            gen_traversal.source_step =
+                Separator::Empty(SourceStep::SearchHybrid(GeneratedSearchHybrid {
                     label,
                     vec,
                     text_query,
                     k,
                     pre_filter,
-                },
-            ));
+                }));
 
             Type::Vectors(sh.vector_type.clone())
         }

@@ -1,4 +1,4 @@
-use crate::helix_engine::storage_core::{storage_methods::StorageMethods, HelixGraphStorage};
+use crate::helix_engine::storage_core::{HelixGraphStorage, storage_methods::StorageMethods};
 use heed3::RoTxn;
 use std::collections::{HashMap, HashSet};
 
@@ -24,6 +24,8 @@ const DEFAULT_EDGE_WEIGHT: f64 = 0.5;
 
 /// Minimum score threshold to continue propagation (prevents infinite loops on tiny scores)
 const SCORE_THRESHOLD: f64 = 1e-10;
+/// Maximum number of part_of hops allowed during PPR expansion
+const PART_OF_MAX_HOPS: usize = 2;
 
 /// Local PPR with candidate-set gating (both-endpoints-readable)
 ///
@@ -184,20 +186,24 @@ pub fn ppr_with_storage(
     }
 
     let mut scores: HashMap<u128, f64> = HashMap::new();
-    let initial_score = 1.0 / seed_ids.len() as f64;
+    let num_seeds = seed_ids.len() as f64;
+    let initial_score = 1.0 / num_seeds;
 
-    let mut frontier: HashMap<u128, f64> = HashMap::new();
+    let mut frontier: HashMap<(u128, usize), f64> = HashMap::new();
+    let mut seeds_in_universe: Vec<u128> = Vec::with_capacity(seed_ids.len());
     for &seed in seed_ids {
         if universe_ids.contains(&seed) {
+            seeds_in_universe.push(seed);
             *scores.entry(seed).or_insert(0.0) += initial_score;
-            *frontier.entry(seed).or_insert(0.0) += initial_score;
+            *frontier.entry((seed, 0)).or_insert(0.0) += initial_score;
         }
     }
 
     for _depth in 0..max_depth {
-        let mut next_frontier: HashMap<u128, f64> = HashMap::new();
+        let total_frontier_score: f64 = frontier.values().sum();
+        let mut next_frontier: HashMap<(u128, usize), f64> = HashMap::new();
 
-        for (&node_id, &node_score) in &frontier {
+        for (&(node_id, part_of_hops), &node_score) in &frontier {
             if node_score < SCORE_THRESHOLD {
                 continue;
             }
@@ -234,9 +240,80 @@ pub fn ppr_with_storage(
                     continue;
                 }
 
+                let is_part_of = edge_label == "part_of";
+                if is_part_of && part_of_hops >= PART_OF_MAX_HOPS {
+                    continue;
+                }
+                let next_part_of_hops = if is_part_of {
+                    part_of_hops + 1
+                } else {
+                    part_of_hops
+                };
+
                 let propagated_score = node_score * weight * damping;
                 *scores.entry(target_node).or_insert(0.0) += propagated_score;
-                *next_frontier.entry(target_node).or_insert(0.0) += propagated_score;
+                *next_frontier
+                    .entry((target_node, next_part_of_hops))
+                    .or_insert(0.0) += propagated_score;
+            }
+
+            let in_prefix = node_id.to_be_bytes().to_vec();
+            let iter = match storage.in_edges_db.prefix_iter(txn, &in_prefix) {
+                Ok(iter) => iter,
+                Err(_) => continue,
+            };
+
+            for result in iter {
+                let (_, value) = match result {
+                    Ok((key, value)) => (key, value),
+                    Err(_) => continue,
+                };
+                let (edge_id, source_node) = match HelixGraphStorage::unpack_adj_edge_data(value) {
+                    Ok((edge_id, from_node)) => (edge_id, from_node),
+                    Err(_) => continue,
+                };
+
+                if !universe_ids.contains(&source_node) {
+                    continue;
+                }
+
+                let edge = match storage.get_edge(txn, &edge_id, arena) {
+                    Ok(edge) => edge,
+                    Err(_) => continue,
+                };
+                let edge_label = edge.label;
+
+                let weight = get_edge_weight(edge_label, edge_weights);
+
+                if weight <= 0.0 {
+                    continue;
+                }
+
+                let is_part_of = edge_label == "part_of";
+                if is_part_of && part_of_hops >= PART_OF_MAX_HOPS {
+                    continue;
+                }
+                let next_part_of_hops = if is_part_of {
+                    part_of_hops + 1
+                } else {
+                    part_of_hops
+                };
+
+                let propagated_score = node_score * weight * damping;
+                *scores.entry(source_node).or_insert(0.0) += propagated_score;
+                *next_frontier
+                    .entry((source_node, next_part_of_hops))
+                    .or_insert(0.0) += propagated_score;
+            }
+        }
+
+        if !seeds_in_universe.is_empty() {
+            let teleport_score = total_frontier_score * (1.0 - damping) / num_seeds;
+            if teleport_score > 0.0 {
+                for &seed in &seeds_in_universe {
+                    *scores.entry(seed).or_insert(0.0) += teleport_score;
+                    *next_frontier.entry((seed, 0)).or_insert(0.0) += teleport_score;
+                }
             }
         }
 

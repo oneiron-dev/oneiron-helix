@@ -659,10 +659,10 @@ impl HelixParser {
                                 for inner in arg.into_inner() {
                                     match inner.as_rule() {
                                         Rule::integer => {
-                                            let val = inner
-                                                .as_str()
-                                                .parse::<i32>()
-                                                .map_err(|_| ParserError::from("Invalid integer value"))?;
+                                            let val =
+                                                inner.as_str().parse::<i32>().map_err(|_| {
+                                                    ParserError::from("Invalid integer value")
+                                                })?;
                                             depth = Some(EvaluatesToNumber {
                                                 loc: inner.loc(),
                                                 value: EvaluatesToNumberType::I32(val),
@@ -671,7 +671,9 @@ impl HelixParser {
                                         Rule::identifier => {
                                             depth = Some(EvaluatesToNumber {
                                                 loc: inner.loc(),
-                                                value: EvaluatesToNumberType::Identifier(inner.as_str().to_string()),
+                                                value: EvaluatesToNumberType::Identifier(
+                                                    inner.as_str().to_string(),
+                                                ),
                                             });
                                         }
                                         _ => {}
@@ -682,10 +684,10 @@ impl HelixParser {
                                 for inner in arg.into_inner() {
                                     match inner.as_rule() {
                                         Rule::float => {
-                                            let val = inner
-                                                .as_str()
-                                                .parse::<f64>()
-                                                .map_err(|_| ParserError::from("Invalid float value"))?;
+                                            let val =
+                                                inner.as_str().parse::<f64>().map_err(|_| {
+                                                    ParserError::from("Invalid float value")
+                                                })?;
                                             damping = Some(EvaluatesToNumber {
                                                 loc: inner.loc(),
                                                 value: EvaluatesToNumberType::F64(val),
@@ -694,7 +696,9 @@ impl HelixParser {
                                         Rule::identifier => {
                                             damping = Some(EvaluatesToNumber {
                                                 loc: inner.loc(),
-                                                value: EvaluatesToNumberType::Identifier(inner.as_str().to_string()),
+                                                value: EvaluatesToNumberType::Identifier(
+                                                    inner.as_str().to_string(),
+                                                ),
                                             });
                                         }
                                         _ => {}
@@ -705,10 +709,10 @@ impl HelixParser {
                                 for inner in arg.into_inner() {
                                     match inner.as_rule() {
                                         Rule::integer => {
-                                            let val = inner
-                                                .as_str()
-                                                .parse::<i32>()
-                                                .map_err(|_| ParserError::from("Invalid integer value"))?;
+                                            let val =
+                                                inner.as_str().parse::<i32>().map_err(|_| {
+                                                    ParserError::from("Invalid integer value")
+                                                })?;
                                             limit = Some(EvaluatesToNumber {
                                                 loc: inner.loc(),
                                                 value: EvaluatesToNumberType::I32(val),
@@ -717,7 +721,9 @@ impl HelixParser {
                                         Rule::identifier => {
                                             limit = Some(EvaluatesToNumber {
                                                 loc: inner.loc(),
-                                                value: EvaluatesToNumberType::Identifier(inner.as_str().to_string()),
+                                                value: EvaluatesToNumberType::Identifier(
+                                                    inner.as_str().to_string(),
+                                                ),
                                             });
                                         }
                                         _ => {}
