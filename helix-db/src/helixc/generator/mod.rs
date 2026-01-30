@@ -22,6 +22,7 @@ use std::io::Write;
 use std::{fmt::Display, fs::File, io::Result, path::Path};
 
 pub mod bool_ops;
+pub mod computed_expr;
 pub mod math_functions;
 pub mod migrations;
 pub mod queries;

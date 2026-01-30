@@ -94,6 +94,11 @@ pub fn command_exists(command: &str) -> bool {
 }
 
 /// Print a status message with a prefix
+#[deprecated(
+    since = "2.3.0",
+    note = "Use output::Operation or output::Step instead"
+)]
+#[allow(dead_code)]
 pub fn print_status(prefix: &str, message: &str) {
     println!("{} {message}", format!("[{prefix}]").blue().bold());
 }
@@ -110,6 +115,7 @@ pub fn print_message(prefix: &str, message: &str) {
 }
 
 /// Print a plain message (replaces direct println! usage)
+#[allow(dead_code)]
 pub fn print_line(message: &str) {
     println!("{message}");
 }
@@ -165,6 +171,11 @@ pub fn print_error_with_hint(message: &str, hint: &str) {
 }
 
 /// Print a success message
+#[deprecated(
+    since = "2.3.0",
+    note = "Use output::Operation::success() or output::success() instead"
+)]
+#[allow(dead_code)]
 pub fn print_success(message: &str) {
     println!("{} {message}", "[SUCCESS]".green().bold());
 }
@@ -325,6 +336,9 @@ pub mod helixc_utils {
 
         collect_from_dir(&queries_path, &mut files)?;
 
+        // Sort files by path for deterministic ordering across platforms
+        files.sort_by_key(|a| a.path());
+
         if files.is_empty() {
             return Err(eyre::eyre!(
                 "No .hx files found in {}",
@@ -465,6 +479,11 @@ pub mod helixc_utils {
     }
 }
 
+#[deprecated(
+    since = "2.3.0",
+    note = "Use output::LiveSpinner or output::Step instead"
+)]
+#[allow(dead_code)]
 pub struct Spinner {
     message: std::sync::Arc<std::sync::Mutex<String>>,
     prefix: String,
@@ -472,6 +491,8 @@ pub struct Spinner {
     handle: Option<tokio::task::JoinHandle<()>>,
 }
 
+#[allow(deprecated)]
+#[allow(dead_code)]
 impl Spinner {
     pub fn new(prefix: &str, message: &str) -> Self {
         Self {
@@ -528,6 +549,7 @@ impl Spinner {
     }
 }
 
+#[allow(deprecated)]
 impl Drop for Spinner {
     fn drop(&mut self) {
         self.stop();

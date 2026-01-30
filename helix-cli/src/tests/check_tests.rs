@@ -1,147 +1,24 @@
 use crate::commands::check::run;
 use crate::config::{DbConfig, HelixConfig, LocalInstanceConfig};
 use crate::metrics_sender::MetricsSender;
+use crate::tests::test_utils::TestContext;
 use std::fs;
 use std::path::PathBuf;
-use tempfile::TempDir;
 
 /// Helper to create a metrics sender for tests
 fn create_test_metrics_sender() -> MetricsSender {
     MetricsSender::new().expect("Failed to create metrics sender")
 }
 
-/// Helper function to create a test project with valid schema and queries
-fn setup_valid_project() -> (TempDir, PathBuf) {
-    let temp_dir = TempDir::new().expect("Failed to create temp dir");
-    let project_path = temp_dir.path().to_path_buf();
-
-    // Create helix.toml with a local instance
-    let config = HelixConfig::default_config("test-project");
-    let config_path = project_path.join("helix.toml");
-    config
-        .save_to_file(&config_path)
-        .expect("Failed to save config");
-
-    // Create .helix directory
-    fs::create_dir_all(project_path.join(".helix")).expect("Failed to create .helix");
-
-    // Create queries directory
-    let queries_dir = project_path.join("db");
-    fs::create_dir_all(&queries_dir).expect("Failed to create queries directory");
-
-    // Create valid schema.hx
-    let schema_content = r#"
-// Node types
-N::User {
-    name: String,
-    email: String,
-}
-
-N::Post {
-    title: String,
-    content: String,
-}
-
-// Edge types
-E::Authored {
-    From: User,
-    To: Post,
-}
-
-E::Likes {
-    From: User,
-    To: Post,
-}
-"#;
-    fs::write(queries_dir.join("schema.hx"), schema_content).expect("Failed to write schema.hx");
-
-    // Create valid queries.hx
-    let queries_content = r#"
-QUERY GetUser(user_id: ID) =>
-    user <- N<User>(user_id)
-    RETURN user
-
-QUERY GetUserPosts(user_id: ID) =>
-    posts <- N<User>(user_id)::Out<Authored>
-    RETURN posts
-"#;
-    fs::write(queries_dir.join("queries.hx"), queries_content).expect("Failed to write queries.hx");
-
-    (temp_dir, project_path)
-}
-
-/// Helper function to create a project with empty schema
-fn setup_project_without_schema() -> (TempDir, PathBuf) {
-    let temp_dir = TempDir::new().expect("Failed to create temp dir");
-    let project_path = temp_dir.path().to_path_buf();
-
-    // Create helix.toml
-    let config = HelixConfig::default_config("test-project");
-    let config_path = project_path.join("helix.toml");
-    config
-        .save_to_file(&config_path)
-        .expect("Failed to save config");
-
-    // Create .helix directory
-    fs::create_dir_all(project_path.join(".helix")).expect("Failed to create .helix");
-
-    // Create queries directory with only queries, no schema
-    let queries_dir = project_path.join("db");
-    fs::create_dir_all(&queries_dir).expect("Failed to create queries directory");
-
-    // Create queries.hx without schema definitions
-    let queries_content = r#"
-QUERY GetUser(user_id: ID) =>
-    user <- N<User>(user_id)
-    RETURN user
-"#;
-    fs::write(queries_dir.join("queries.hx"), queries_content).expect("Failed to write queries.hx");
-
-    (temp_dir, project_path)
-}
-
-/// Helper function to create a project with invalid syntax
-fn setup_project_with_invalid_syntax() -> (TempDir, PathBuf) {
-    let temp_dir = TempDir::new().expect("Failed to create temp dir");
-    let project_path = temp_dir.path().to_path_buf();
-
-    // Create helix.toml
-    let config = HelixConfig::default_config("test-project");
-    let config_path = project_path.join("helix.toml");
-    config
-        .save_to_file(&config_path)
-        .expect("Failed to save config");
-
-    // Create .helix directory
-    fs::create_dir_all(project_path.join(".helix")).expect("Failed to create .helix");
-
-    // Create queries directory
-    let queries_dir = project_path.join("db");
-    fs::create_dir_all(&queries_dir).expect("Failed to create queries directory");
-
-    // Create schema with valid definitions
-    let schema_content = r#"
-N::User {
-    name: String,
-}
-"#;
-    fs::write(queries_dir.join("schema.hx"), schema_content).expect("Failed to write schema.hx");
-
-    // Create queries.hx with invalid syntax
-    let invalid_queries = r#"
-QUERY InvalidQuery {
-    this is not valid helix syntax!!!
-}
-"#;
-    fs::write(queries_dir.join("queries.hx"), invalid_queries).expect("Failed to write queries.hx");
-
-    (temp_dir, project_path)
-}
-
+/// This test requires cloning the helix repo which is slow and requires network.
+/// Run with: cargo test --package helix-cli -- --ignored --test-threads=1
 #[tokio::test]
+#[ignore]
 async fn test_check_all_instances_success() {
-    let (_temp_dir, project_path) = setup_valid_project();
-    let _guard = std::env::set_current_dir(&project_path);
+    let ctx = TestContext::new();
+    ctx.setup_valid_project();
+
+    let _guard = std::env::set_current_dir(&ctx.project_path);
     let metrics_sender = create_test_metrics_sender();
 
     let result = run(None, &metrics_sender).await;
@@ -152,10 +29,15 @@ async fn test_check_all_instances_success() {
     );
 }
 
+/// This test requires cloning the helix repo which is slow and requires network.
+/// Run with: cargo test --package helix-cli -- --ignored --test-threads=1
 #[tokio::test]
+#[ignore]
 async fn test_check_specific_instance_success() {
-    let (_temp_dir, project_path) = setup_valid_project();
-    let _guard = std::env::set_current_dir(&project_path);
+    let ctx = TestContext::new();
+    ctx.setup_valid_project();
+
+    let _guard = std::env::set_current_dir(&ctx.project_path);
     let metrics_sender = create_test_metrics_sender();
 
     let result = run(Some("dev".to_string()), &metrics_sender).await;
@@ -168,8 +50,10 @@ async fn test_check_specific_instance_success() {
 
 #[tokio::test]
 async fn test_check_nonexistent_instance_fails() {
-    let (_temp_dir, project_path) = setup_valid_project();
-    let _guard = std::env::set_current_dir(&project_path);
+    let ctx = TestContext::new();
+    ctx.setup_valid_project();
+
+    let _guard = std::env::set_current_dir(&ctx.project_path);
     let metrics_sender = create_test_metrics_sender();
 
     let result = run(Some("nonexistent".to_string()), &metrics_sender).await;
@@ -186,8 +70,10 @@ async fn test_check_nonexistent_instance_fails() {
 
 #[tokio::test]
 async fn test_check_fails_without_schema() {
-    let (_temp_dir, project_path) = setup_project_without_schema();
-    let _guard = std::env::set_current_dir(&project_path);
+    let ctx = TestContext::new();
+    ctx.setup_project_without_schema();
+
+    let _guard = std::env::set_current_dir(&ctx.project_path);
     let metrics_sender = create_test_metrics_sender();
 
     let result = run(None, &metrics_sender).await;
@@ -201,8 +87,10 @@ async fn test_check_fails_without_schema() {
 
 #[tokio::test]
 async fn test_check_fails_with_invalid_syntax() {
-    let (_temp_dir, project_path) = setup_project_with_invalid_syntax();
-    let _guard = std::env::set_current_dir(&project_path);
+    let ctx = TestContext::new();
+    ctx.setup_project_with_invalid_syntax();
+
+    let _guard = std::env::set_current_dir(&ctx.project_path);
     let metrics_sender = create_test_metrics_sender();
 
     let result = run(None, &metrics_sender).await;
@@ -211,9 +99,10 @@ async fn test_check_fails_with_invalid_syntax() {
 
 #[tokio::test]
 async fn test_check_fails_without_helix_toml() {
-    let temp_dir = TempDir::new().expect("Failed to create temp dir");
-    let project_path = temp_dir.path().to_path_buf();
-    let _guard = std::env::set_current_dir(&project_path);
+    let ctx = TestContext::new();
+    // Don't set up any project - leave directory empty
+
+    let _guard = std::env::set_current_dir(&ctx.project_path);
     let metrics_sender = create_test_metrics_sender();
 
     let result = run(None, &metrics_sender).await;
@@ -228,10 +117,12 @@ async fn test_check_fails_without_helix_toml() {
     );
 }
 
+/// This test requires cloning the helix repo which is slow and requires network.
+/// Run with: cargo test --package helix-cli -- --ignored --test-threads=1
 #[tokio::test]
+#[ignore]
 async fn test_check_with_multiple_instances() {
-    let temp_dir = TempDir::new().expect("Failed to create temp dir");
-    let project_path = temp_dir.path().to_path_buf();
+    let ctx = TestContext::new();
 
     // Create helix.toml with multiple instances
     let mut config = HelixConfig::default_config("test-project");
@@ -239,7 +130,7 @@ async fn test_check_with_multiple_instances() {
         "staging".to_string(),
         LocalInstanceConfig {
             port: Some(6970),
-            build_mode: crate::config::BuildMode::Debug,
+            build_mode: crate::config::BuildMode::Dev,
             db_config: DbConfig::default(),
         },
     );
@@ -247,20 +138,20 @@ async fn test_check_with_multiple_instances() {
         "production".to_string(),
         LocalInstanceConfig {
             port: Some(6971),
-            build_mode: crate::config::BuildMode::Debug,
+            build_mode: crate::config::BuildMode::Dev,
             db_config: DbConfig::default(),
         },
     );
-    let config_path = project_path.join("helix.toml");
+    let config_path = ctx.project_path.join("helix.toml");
     config
         .save_to_file(&config_path)
         .expect("Failed to save config");
 
     // Create .helix directory
-    fs::create_dir_all(project_path.join(".helix")).expect("Failed to create .helix");
+    fs::create_dir_all(ctx.project_path.join(".helix")).expect("Failed to create .helix");
 
     // Create valid queries and schema
-    let queries_dir = project_path.join("db");
+    let queries_dir = ctx.project_path.join("db");
     fs::create_dir_all(&queries_dir).expect("Failed to create queries directory");
 
     let schema_content = r#"
@@ -275,7 +166,7 @@ E::Follows {
 "#;
     fs::write(queries_dir.join("schema.hx"), schema_content).expect("Failed to write schema.hx");
 
-    let _guard = std::env::set_current_dir(&project_path);
+    let _guard = std::env::set_current_dir(&ctx.project_path);
     let metrics_sender = create_test_metrics_sender();
 
     let result = run(None, &metrics_sender).await;
@@ -286,10 +177,15 @@ E::Follows {
     );
 }
 
+/// This test requires cloning the helix repo which is slow and requires network.
+/// Run with: cargo test --package helix-cli -- --ignored --test-threads=1
 #[tokio::test]
+#[ignore]
 async fn test_check_validates_each_instance_individually() {
-    let (_temp_dir, project_path) = setup_valid_project();
-    let _guard = std::env::set_current_dir(&project_path);
+    let ctx = TestContext::new();
+    ctx.setup_valid_project();
+
+    let _guard = std::env::set_current_dir(&ctx.project_path);
     let metrics_sender = create_test_metrics_sender();
 
     // Check the specific instance
@@ -299,24 +195,23 @@ async fn test_check_validates_each_instance_individually() {
 
 #[tokio::test]
 async fn test_check_with_empty_queries_directory() {
-    let temp_dir = TempDir::new().expect("Failed to create temp dir");
-    let project_path = temp_dir.path().to_path_buf();
+    let ctx = TestContext::new();
 
     // Create helix.toml
     let config = HelixConfig::default_config("test-project");
-    let config_path = project_path.join("helix.toml");
+    let config_path = ctx.project_path.join("helix.toml");
     config
         .save_to_file(&config_path)
         .expect("Failed to save config");
 
     // Create .helix directory
-    fs::create_dir_all(project_path.join(".helix")).expect("Failed to create .helix");
+    fs::create_dir_all(ctx.project_path.join(".helix")).expect("Failed to create .helix");
 
     // Create queries directory but leave it empty
-    let queries_dir = project_path.join("db");
+    let queries_dir = ctx.project_path.join("db");
     fs::create_dir_all(&queries_dir).expect("Failed to create queries directory");
 
-    let _guard = std::env::set_current_dir(&project_path);
+    let _guard = std::env::set_current_dir(&ctx.project_path);
     let metrics_sender = create_test_metrics_sender();
 
     let result = run(None, &metrics_sender).await;
@@ -326,39 +221,15 @@ async fn test_check_with_empty_queries_directory() {
     );
 }
 
+/// This test requires cloning the helix repo which is slow and requires network.
+/// Run with: cargo test --package helix-cli -- --ignored --test-threads=1
 #[tokio::test]
+#[ignore]
 async fn test_check_with_schema_only() {
-    let temp_dir = TempDir::new().expect("Failed to create temp dir");
-    let project_path = temp_dir.path().to_path_buf();
+    let ctx = TestContext::new();
+    ctx.setup_schema_only_project();
 
-    // Create helix.toml
-    let config = HelixConfig::default_config("test-project");
-    let config_path = project_path.join("helix.toml");
-    config
-        .save_to_file(&config_path)
-        .expect("Failed to save config");
-
-    // Create .helix directory
-    fs::create_dir_all(project_path.join(".helix")).expect("Failed to create .helix");
-
-    // Create queries directory with only schema
-    let queries_dir = project_path.join("db");
-    fs::create_dir_all(&queries_dir).expect("Failed to create queries directory");
-
-    let schema_content = r#"
-N::User {
-    name: String,
-    email: String,
-}
-
-E::Follows {
-    From: User,
-    To: User,
-}
-"#;
-    fs::write(queries_dir.join("schema.hx"), schema_content).expect("Failed to write schema.hx");
-
-    let _guard = std::env::set_current_dir(&project_path);
+    let _guard = std::env::set_current_dir(&ctx.project_path);
     let metrics_sender = create_test_metrics_sender();
 
     let result = run(None, &metrics_sender).await;
@@ -369,23 +240,25 @@ E::Follows {
     );
 }
 
+/// This test requires cloning the helix repo which is slow and requires network.
+/// Run with: cargo test --package helix-cli -- --ignored --test-threads=1
 #[tokio::test]
+#[ignore]
 async fn test_check_with_multiple_hx_files() {
-    let temp_dir = TempDir::new().expect("Failed to create temp dir");
-    let project_path = temp_dir.path().to_path_buf();
+    let ctx = TestContext::new();
 
     // Create helix.toml
     let config = HelixConfig::default_config("test-project");
-    let config_path = project_path.join("helix.toml");
+    let config_path = ctx.project_path.join("helix.toml");
     config
         .save_to_file(&config_path)
         .expect("Failed to save config");
 
     // Create .helix directory
-    fs::create_dir_all(project_path.join(".helix")).expect("Failed to create .helix");
+    fs::create_dir_all(ctx.project_path.join(".helix")).expect("Failed to create .helix");
 
     // Create queries directory
-    let queries_dir = project_path.join("db");
+    let queries_dir = ctx.project_path.join("db");
     fs::create_dir_all(&queries_dir).expect("Failed to create queries directory");
 
     // Create schema in one file
@@ -418,7 +291,7 @@ QUERY GetUser(id: ID) =>
 "#;
     fs::write(queries_dir.join("queries.hx"), queries).expect("Failed to write queries.hx");
 
-    let _guard = std::env::set_current_dir(&project_path);
+    let _guard = std::env::set_current_dir(&ctx.project_path);
     let metrics_sender = create_test_metrics_sender();
 
     let result = run(None, &metrics_sender).await;
@@ -429,24 +302,26 @@ QUERY GetUser(id: ID) =>
     );
 }
 
+/// This test requires cloning the helix repo which is slow and requires network.
+/// Run with: cargo test --package helix-cli -- --ignored --test-threads=1
 #[tokio::test]
+#[ignore]
 async fn test_check_with_custom_queries_path() {
-    let temp_dir = TempDir::new().expect("Failed to create temp dir");
-    let project_path = temp_dir.path().to_path_buf();
+    let ctx = TestContext::new();
 
     // Create helix.toml with custom queries path
     let mut config = HelixConfig::default_config("test-project");
     config.project.queries = PathBuf::from("custom/helix/queries");
-    let config_path = project_path.join("helix.toml");
+    let config_path = ctx.project_path.join("helix.toml");
     config
         .save_to_file(&config_path)
         .expect("Failed to save config");
 
     // Create .helix directory
-    fs::create_dir_all(project_path.join(".helix")).expect("Failed to create .helix");
+    fs::create_dir_all(ctx.project_path.join(".helix")).expect("Failed to create .helix");
 
     // Create custom queries directory
-    let queries_dir = project_path.join("custom/helix/queries");
+    let queries_dir = ctx.project_path.join("custom/helix/queries");
     fs::create_dir_all(&queries_dir).expect("Failed to create custom queries directory");
 
     let schema_content = r#"
@@ -456,7 +331,7 @@ N::User {
 "#;
     fs::write(queries_dir.join("schema.hx"), schema_content).expect("Failed to write schema.hx");
 
-    let _guard = std::env::set_current_dir(&project_path);
+    let _guard = std::env::set_current_dir(&ctx.project_path);
     let metrics_sender = create_test_metrics_sender();
 
     let result = run(None, &metrics_sender).await;

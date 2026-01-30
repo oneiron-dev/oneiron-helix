@@ -10,6 +10,7 @@ mod docker;
 mod errors;
 mod github_issue;
 mod metrics_sender;
+mod output;
 mod port;
 mod project;
 mod prompts;
@@ -21,6 +22,14 @@ mod utils;
 #[command(name = "Helix CLI")]
 #[command(version)]
 struct Cli {
+    /// Suppress output (errors and final result only)
+    #[arg(short, long, global = true)]
+    quiet: bool,
+
+    /// Show detailed output with timing information
+    #[arg(short, long, global = true)]
+    verbose: bool,
+
     #[clap(subcommand)]
     command: Commands,
 }
@@ -80,7 +89,11 @@ enum Commands {
     /// Build and compile project for an instance
     Build {
         /// Instance name to build (interactive selection if not provided)
+        #[clap(short, long)]
         instance: Option<String>,
+        /// Should build HelixDB into a binary at the specified directory location
+        #[clap(long)]
+        bin: Option<String>,
     },
 
     /// Deploy/start an instance
@@ -107,6 +120,12 @@ enum Commands {
     /// Stop an instance
     Stop {
         /// Instance name to stop (interactive selection if not provided)
+        instance: Option<String>,
+    },
+
+    /// Restart an instance (stop then start)
+    Restart {
+        /// Instance name to restart (interactive selection if not provided)
         instance: Option<String>,
     },
 
@@ -236,6 +255,9 @@ async fn main() -> Result<()> {
 
     let cli = Cli::parse();
 
+    // Set verbosity level from flags
+    output::Verbosity::set(output::Verbosity::from_flags(cli.quiet, cli.verbose));
+
     let result = match cli.command {
         Commands::Init {
             path,
@@ -249,7 +271,7 @@ async fn main() -> Result<()> {
         }
         Commands::Check { instance } => commands::check::run(instance, &metrics_sender).await,
         Commands::Compile { output, path } => commands::compile::run(output, path).await,
-        Commands::Build { instance } => commands::build::run(instance, &metrics_sender)
+        Commands::Build { instance, bin } => commands::build::run(instance, bin, &metrics_sender)
             .await
             .map(|_| ()),
         Commands::Push { instance, dev } => {
@@ -258,6 +280,7 @@ async fn main() -> Result<()> {
         Commands::Pull { instance } => commands::pull::run(instance).await,
         Commands::Start { instance } => commands::start::run(instance).await,
         Commands::Stop { instance } => commands::stop::run(instance).await,
+        Commands::Restart { instance } => commands::restart::run(instance).await,
         Commands::Status => commands::status::run().await,
         Commands::Logs {
             instance,

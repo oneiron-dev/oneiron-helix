@@ -161,15 +161,24 @@ pub(crate) fn save_metrics_config(config: &MetricsConfig) -> Result<()> {
 }
 
 pub(crate) fn get_metrics_config_path() -> Result<PathBuf> {
-    let home = home_dir().ok_or_eyre("Cannot find home directory")?;
-    let helix_dir = home.join(".helix");
+    let helix_dir = if let Ok(home) = std::env::var("HELIX_HOME") {
+        PathBuf::from(home)
+    } else {
+        let home = home_dir().ok_or_eyre("Cannot find home directory")?;
+        home.join(".helix")
+    };
     fs::create_dir_all(&helix_dir)?;
     Ok(helix_dir.join("metrics.toml"))
 }
 
 fn get_metrics_dir() -> Result<PathBuf> {
-    let home = home_dir().ok_or_eyre("Cannot find home directory")?;
-    let metrics_dir = home.join(".helix").join("metrics");
+    let helix_dir = if let Ok(home) = std::env::var("HELIX_HOME") {
+        PathBuf::from(home)
+    } else {
+        let home = home_dir().ok_or_eyre("Cannot find home directory")?;
+        home.join(".helix")
+    };
+    let metrics_dir = helix_dir.join("metrics");
     fs::create_dir_all(&metrics_dir)?;
     Ok(metrics_dir)
 }

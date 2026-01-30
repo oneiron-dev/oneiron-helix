@@ -49,9 +49,21 @@ impl HelixError {
 impl IntoResponse for HelixError {
     fn into_response(self) -> axum::response::Response {
         let status = match &self {
-            HelixError::Graph(_) | HelixError::Vector(_) => 500,
-            HelixError::NotFound { .. } => 404,
-            HelixError::InvalidApiKey => 403,
+            HelixError::NotFound { .. }
+            | HelixError::Graph(
+                GraphError::ConfigFileNotFound
+                | GraphError::NodeNotFound
+                | GraphError::EdgeNotFound
+                | GraphError::LabelNotFound
+                | GraphError::ShortestPathNotFound,
+            )
+            | HelixError::Vector(VectorError::VectorNotFound(_)) => {
+                axum::http::StatusCode::NOT_FOUND
+            }
+            HelixError::Graph(_) | HelixError::Vector(_) => {
+                axum::http::StatusCode::INTERNAL_SERVER_ERROR
+            }
+            HelixError::InvalidApiKey => axum::http::StatusCode::FORBIDDEN,
         };
 
         let error_response = ErrorResponse {

@@ -6,9 +6,10 @@ use crate::commands::integrations::helix::HelixManager;
 use crate::config::{BuildMode, CloudConfig, DbConfig, LocalInstanceConfig};
 use crate::docker::DockerManager;
 use crate::errors::project_error;
+use crate::output::{Operation, Step};
 use crate::project::ProjectContext;
 use crate::prompts;
-use crate::utils::{print_instructions, print_status, print_success};
+use crate::utils::print_instructions;
 use eyre::Result;
 use std::env;
 
@@ -84,10 +85,7 @@ async fn run_add_inner(
         .into());
     }
 
-    print_status(
-        "ADD",
-        &format!("Adding instance '{instance_name}' to Helix project"),
-    );
+    let op = Operation::new("Adding", &instance_name);
 
     // Backup the original config before any modifications
     let config_path = project_context.root.join("helix.toml");
@@ -115,7 +113,7 @@ async fn run_add_inner(
             let config_path = project_context.root.join("helix.toml");
             project_context.config.save_to_file(&config_path)?;
 
-            print_status("CLOUD", "Helix cloud instance configuration added");
+            Step::verbose_substep("Helix cloud instance configuration added");
 
             // Prompt user to create cluster now
             println!();
@@ -140,9 +138,7 @@ async fn run_add_inner(
 
                 // create_cluster::run() already saved the updated config with the real cluster_id
                 // Return early to avoid overwriting it with the stale in-memory config
-                print_success(&format!(
-                    "Instance '{instance_name}' added to Helix project"
-                ));
+                op.success();
 
                 print_instructions(
                     "Next steps:",
@@ -159,13 +155,10 @@ async fn run_add_inner(
                 return Ok(());
             } else {
                 println!();
-                print_status(
-                    "INFO",
-                    &format!(
-                        "Cluster creation skipped. Run 'helix create-cluster {}' when ready.",
-                        instance_name
-                    ),
-                );
+                crate::output::info(&format!(
+                    "Cluster creation skipped. Run 'helix create-cluster {}' when ready.",
+                    instance_name
+                ));
             }
         }
         CloudDeploymentTypeCommand::Ecr { .. } => {
@@ -196,7 +189,7 @@ async fn run_add_inner(
                 .cloud
                 .insert(instance_name.clone(), CloudConfig::Ecr(ecr_config.clone()));
 
-            print_status("ECR", "AWS ECR repository initialized successfully");
+            Step::verbose_substep("AWS ECR repository initialized successfully");
         }
         CloudDeploymentTypeCommand::Fly {
             auth,
@@ -246,7 +239,7 @@ async fn run_add_inner(
                 .config
                 .local
                 .insert(instance_name.clone(), local_config);
-            print_status("LOCAL", "Local instance configuration added");
+            Step::verbose_substep("Local instance configuration added");
         }
     }
 
@@ -254,9 +247,7 @@ async fn run_add_inner(
     let config_path = project_context.root.join("helix.toml");
     project_context.config.save_to_file(&config_path)?;
 
-    print_success(&format!(
-        "Instance '{instance_name}' added to Helix project"
-    ));
+    op.success();
 
     print_instructions(
         "Next steps:",

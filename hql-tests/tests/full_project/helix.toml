@@ -1,5 +1,5 @@
 [project]
-name = "migrations"
+name = "n_by_index"
 queries = "."
 
 [local.dev]

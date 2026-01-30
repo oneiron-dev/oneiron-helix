@@ -3,6 +3,11 @@ name: Core Database Tests
 on:
   pull_request:
     branches: [ main, dev ]
+    paths:
+      - 'helix-macros/**'
+      - 'helix-db/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
 
 jobs:
   test:
@@ -33,6 +38,6 @@ jobs:
           ${{ runner.os }}-cargo-
           
     - name: Run tests
-      run: | 
+      run: |
         cd helix-db
         cargo test --release --lib -- --skip concurrency_tests

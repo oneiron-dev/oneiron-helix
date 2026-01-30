@@ -286,6 +286,891 @@ impl PartialEq<Value> for Value {
     }
 }
 
+impl Value {
+    /// Convert any numeric Value to f64 for type promotion
+    fn to_f64(&self) -> Option<f64> {
+        match self {
+            Value::I8(v) => Some(*v as f64),
+            Value::I16(v) => Some(*v as f64),
+            Value::I32(v) => Some(*v as f64),
+            Value::I64(v) => Some(*v as f64),
+            Value::U8(v) => Some(*v as f64),
+            Value::U16(v) => Some(*v as f64),
+            Value::U32(v) => Some(*v as f64),
+            Value::U64(v) => Some(*v as f64),
+            Value::U128(v) => Some(*v as f64),
+            Value::F32(v) => Some(*v as f64),
+            Value::F64(v) => Some(*v),
+            _ => None,
+        }
+    }
+
+    /// Check if value is a float type
+    fn is_float(&self) -> bool {
+        matches!(self, Value::F32(_) | Value::F64(_))
+    }
+
+    /// Convert any signed integer Value to i64
+    fn to_i64(&self) -> Option<i64> {
+        match self {
+            Value::I8(v) => Some(*v as i64),
+            Value::I16(v) => Some(*v as i64),
+            Value::I32(v) => Some(*v as i64),
+            Value::I64(v) => Some(*v),
+            _ => None,
+        }
+    }
+
+    /// Check if value is a signed integer
+    fn is_signed_int(&self) -> bool {
+        matches!(
+            self,
+            Value::I8(_) | Value::I16(_) | Value::I32(_) | Value::I64(_)
+        )
+    }
+
+    /// Check if value is an unsigned integer
+    fn is_unsigned_int(&self) -> bool {
+        matches!(
+            self,
+            Value::U8(_) | Value::U16(_) | Value::U32(_) | Value::U64(_) | Value::U128(_)
+        )
+    }
+}
+
+impl std::ops::Add for &Value {
+    type Output = Value;
+    fn add(self, other: Self) -> Self::Output {
+        (self.clone()).add(other.clone())
+    }
+}
+impl std::ops::Mul for &Value {
+    type Output = Value;
+    fn mul(self, other: Self) -> Self::Output {
+        (self.clone()).mul(other.clone())
+    }
+}
+impl std::ops::Div for &Value {
+    type Output = Value;
+    fn div(self, other: Self) -> Self::Output {
+        (self.clone()).div(other.clone())
+    }
+}
+impl std::ops::Sub for &Value {
+    type Output = Value;
+    fn sub(self, other: Self) -> Self::Output {
+        (self.clone()).sub(other.clone())
+    }
+}
+
+impl std::ops::Add for Value {
+    type Output = Value;
+    fn add(self, other: Self) -> Self::Output {
+        match (self, other) {
+            // Float + Float cases
+            (Value::F64(a), Value::F64(b)) => Value::F64(a + b),
+            (Value::F32(a), Value::F32(b)) => Value::F32(a + b),
+            (Value::F64(a), Value::F32(b)) => Value::F64(a + (b as f64)),
+            (Value::F32(a), Value::F64(b)) => Value::F64((a as f64) + b),
+
+            // Same-type signed integer additions
+            (Value::I8(a), Value::I8(b)) => Value::I8(a.wrapping_add(b)),
+            (Value::I16(a), Value::I16(b)) => Value::I16(a.wrapping_add(b)),
+            (Value::I32(a), Value::I32(b)) => Value::I32(a.wrapping_add(b)),
+            (Value::I64(a), Value::I64(b)) => Value::I64(a.wrapping_add(b)),
+
+            // Same-type unsigned integer additions
+            (Value::U8(a), Value::U8(b)) => Value::U8(a.wrapping_add(b)),
+            (Value::U16(a), Value::U16(b)) => Value::U16(a.wrapping_add(b)),
+            (Value::U32(a), Value::U32(b)) => Value::U32(a.wrapping_add(b)),
+            (Value::U64(a), Value::U64(b)) => Value::U64(a.wrapping_add(b)),
+            (Value::U128(a), Value::U128(b)) => Value::U128(a.wrapping_add(b)),
+
+            // Int + Float → F64 (any integer with any float promotes to F64)
+            (a, b) if (a.is_signed_int() || a.is_unsigned_int()) && b.is_float() => {
+                let a_f64 = a.to_f64().unwrap();
+                let b_f64 = b.to_f64().unwrap();
+                Value::F64(a_f64 + b_f64)
+            }
+            (a, b) if a.is_float() && (b.is_signed_int() || b.is_unsigned_int()) => {
+                let a_f64 = a.to_f64().unwrap();
+                let b_f64 = b.to_f64().unwrap();
+                Value::F64(a_f64 + b_f64)
+            }
+
+            // Cross-type signed integer additions → I64
+            (a, b) if a.is_signed_int() && b.is_signed_int() => {
+                let a_i64 = a.to_i64().unwrap();
+                let b_i64 = b.to_i64().unwrap();
+                Value::I64(a_i64.wrapping_add(b_i64))
+            }
+
+            // Cross-type unsigned integer additions → U128 (safest)
+            (Value::U8(a), b) if b.is_unsigned_int() => {
+                let b_val = match b {
+                    Value::U8(v) => v as u128,
+                    Value::U16(v) => v as u128,
+                    Value::U32(v) => v as u128,
+                    Value::U64(v) => v as u128,
+                    Value::U128(v) => v,
+                    _ => unreachable!(),
+                };
+                Value::U128((a as u128).wrapping_add(b_val))
+            }
+            (Value::U16(a), b) if b.is_unsigned_int() => {
+                let b_val = match b {
+                    Value::U8(v) => v as u128,
+                    Value::U16(v) => v as u128,
+                    Value::U32(v) => v as u128,
+                    Value::U64(v) => v as u128,
+                    Value::U128(v) => v,
+                    _ => unreachable!(),
+                };
+                Value::U128((a as u128).wrapping_add(b_val))
+            }
+            (Value::U32(a), b) if b.is_unsigned_int() => {
+                let b_val = match b {
+                    Value::U8(v) => v as u128,
+                    Value::U16(v) => v as u128,
+                    Value::U32(v) => v as u128,
+                    Value::U64(v) => v as u128,
+                    Value::U128(v) => v,
+                    _ => unreachable!(),
+                };
+                Value::U128((a as u128).wrapping_add(b_val))
+            }
+            (Value::U64(a), b) if b.is_unsigned_int() => {
+                let b_val = match b {
+                    Value::U8(v) => v as u128,
+                    Value::U16(v) => v as u128,
+                    Value::U32(v) => v as u128,
+                    Value::U64(v) => v as u128,
+                    Value::U128(v) => v,
+                    _ => unreachable!(),
+                };
+                Value::U128((a as u128).wrapping_add(b_val))
+            }
+            (Value::U128(a), b) if b.is_unsigned_int() => {
+                let b_val = match b {
+                    Value::U8(v) => v as u128,
+                    Value::U16(v) => v as u128,
+                    Value::U32(v) => v as u128,
+                    Value::U64(v) => v as u128,
+                    Value::U128(v) => v,
+                    _ => unreachable!(),
+                };
+                Value::U128(a.wrapping_add(b_val))
+            }
+
+            // Signed + Unsigned → I64 (safe widening that can represent both)
+            (a, b) if a.is_signed_int() && b.is_unsigned_int() => {
+                let a_i64 = a.to_i64().unwrap();
+                let b_i64 = match b {
+                    Value::U8(v) => v as i64,
+                    Value::U16(v) => v as i64,
+                    Value::U32(v) => v as i64,
+                    Value::U64(v) => v as i64, // May overflow for large u64
+                    Value::U128(v) => v as i64, // May overflow for large u128
+                    _ => unreachable!(),
+                };
+                Value::I64(a_i64.wrapping_add(b_i64))
+            }
+            (a, b) if a.is_unsigned_int() && b.is_signed_int() => {
+                let a_i64 = match a {
+                    Value::U8(v) => v as i64,
+                    Value::U16(v) => v as i64,
+                    Value::U32(v) => v as i64,
+                    Value::U64(v) => v as i64, // May overflow for large u64
+                    Value::U128(v) => v as i64, // May overflow for large u128
+                    _ => unreachable!(),
+                };
+                let b_i64 = b.to_i64().unwrap();
+                Value::I64(a_i64.wrapping_add(b_i64))
+            }
+
+            // String concatenation
+            (Value::String(mut a), Value::String(b)) => {
+                a.push_str(b.as_str());
+                Value::String(a)
+            }
+
+            // Array concatenation
+            (Value::Array(mut a), Value::Array(b)) => {
+                a.extend(b);
+                Value::Array(a)
+            }
+
+            // Invalid combinations
+            _ => panic!("Mismatched types"),
+        }
+    }
+}
+
+impl std::ops::Sub for Value {
+    type Output = Value;
+
+    fn sub(self, other: Self) -> Self::Output {
+        match (self, other) {
+            // Float - Float cases
+            (Value::F64(a), Value::F64(b)) => Value::F64(a - b),
+            (Value::F32(a), Value::F32(b)) => Value::F32(a - b),
+            (Value::F64(a), Value::F32(b)) => Value::F64(a - (b as f64)),
+            (Value::F32(a), Value::F64(b)) => Value::F64((a as f64) - b),
+
+            // Same-type signed integer subtractions
+            (Value::I8(a), Value::I8(b)) => Value::I8(a.wrapping_sub(b)),
+            (Value::I16(a), Value::I16(b)) => Value::I16(a.wrapping_sub(b)),
+            (Value::I32(a), Value::I32(b)) => Value::I32(a.wrapping_sub(b)),
+            (Value::I64(a), Value::I64(b)) => Value::I64(a.wrapping_sub(b)),
+
+            // Same-type unsigned integer subtractions
+            (Value::U8(a), Value::U8(b)) => Value::U8(a.wrapping_sub(b)),
+            (Value::U16(a), Value::U16(b)) => Value::U16(a.wrapping_sub(b)),
+            (Value::U32(a), Value::U32(b)) => Value::U32(a.wrapping_sub(b)),
+            (Value::U64(a), Value::U64(b)) => Value::U64(a.wrapping_sub(b)),
+            (Value::U128(a), Value::U128(b)) => Value::U128(a.wrapping_sub(b)),
+
+            // Int - Float → F64
+            (a, b) if (a.is_signed_int() || a.is_unsigned_int()) && b.is_float() => {
+                let a_f64 = a.to_f64().unwrap();
+                let b_f64 = b.to_f64().unwrap();
+                Value::F64(a_f64 - b_f64)
+            }
+            (a, b) if a.is_float() && (b.is_signed_int() || b.is_unsigned_int()) => {
+                let a_f64 = a.to_f64().unwrap();
+                let b_f64 = b.to_f64().unwrap();
+                Value::F64(a_f64 - b_f64)
+            }
+
+            // Cross-type signed integer subtractions → I64
+            (a, b) if a.is_signed_int() && b.is_signed_int() => {
+                let a_i64 = a.to_i64().unwrap();
+                let b_i64 = b.to_i64().unwrap();
+                Value::I64(a_i64.wrapping_sub(b_i64))
+            }
+
+            // Cross-type unsigned integer subtractions → U128
+            (Value::U8(a), b) if b.is_unsigned_int() => {
+                let b_val = match b {
+                    Value::U8(v) => v as u128,
+                    Value::U16(v) => v as u128,
+                    Value::U32(v) => v as u128,
+                    Value::U64(v) => v as u128,
+                    Value::U128(v) => v,
+                    _ => unreachable!(),
+                };
+                Value::U128((a as u128).wrapping_sub(b_val))
+            }
+            (Value::U16(a), b) if b.is_unsigned_int() => {
+                let b_val = match b {
+                    Value::U8(v) => v as u128,
+                    Value::U16(v) => v as u128,
+                    Value::U32(v) => v as u128,
+                    Value::U64(v) => v as u128,
+                    Value::U128(v) => v,
+                    _ => unreachable!(),
+                };
+                Value::U128((a as u128).wrapping_sub(b_val))
+            }
+            (Value::U32(a), b) if b.is_unsigned_int() => {
+                let b_val = match b {
+                    Value::U8(v) => v as u128,
+                    Value::U16(v) => v as u128,
+                    Value::U32(v) => v as u128,
+                    Value::U64(v) => v as u128,
+                    Value::U128(v) => v,
+                    _ => unreachable!(),
+                };
+                Value::U128((a as u128).wrapping_sub(b_val))
+            }
+            (Value::U64(a), b) if b.is_unsigned_int() => {
+                let b_val = match b {
+                    Value::U8(v) => v as u128,
+                    Value::U16(v) => v as u128,
+                    Value::U32(v) => v as u128,
+                    Value::U64(v) => v as u128,
+                    Value::U128(v) => v,
+                    _ => unreachable!(),
+                };
+                Value::U128((a as u128).wrapping_sub(b_val))
+            }
+            (Value::U128(a), b) if b.is_unsigned_int() => {
+                let b_val = match b {
+                    Value::U8(v) => v as u128,
+                    Value::U16(v) => v as u128,
+                    Value::U32(v) => v as u128,
+                    Value::U64(v) => v as u128,
+                    Value::U128(v) => v,
+                    _ => unreachable!(),
+                };
+                Value::U128(a.wrapping_sub(b_val))
+            }
+
+            // Signed - Unsigned → I64
+            (a, b) if a.is_signed_int() && b.is_unsigned_int() => {
+                let a_i64 = a.to_i64().unwrap();
+                let b_i64 = match b {
+                    Value::U8(v) => v as i64,
+                    Value::U16(v) => v as i64,
+                    Value::U32(v) => v as i64,
+                    Value::U64(v) => v as i64,
+                    Value::U128(v) => v as i64,
+                    _ => unreachable!(),
+                };
+                Value::I64(a_i64.wrapping_sub(b_i64))
+            }
+            (a, b) if a.is_unsigned_int() && b.is_signed_int() => {
+                let a_i64 = match a {
+                    Value::U8(v) => v as i64,
+                    Value::U16(v) => v as i64,
+                    Value::U32(v) => v as i64,
+                    Value::U64(v) => v as i64,
+                    Value::U128(v) => v as i64,
+                    _ => unreachable!(),
+                };
+                let b_i64 = b.to_i64().unwrap();
+                Value::I64(a_i64.wrapping_sub(b_i64))
+            }
+
+            // Invalid combinations
+            _ => panic!("Mismatched types"),
+        }
+    }
+}
+
+impl std::ops::Mul for Value {
+    type Output = Value;
+
+    fn mul(self, other: Self) -> Self::Output {
+        match (self, other) {
+            // Float * Float cases
+            (Value::F64(a), Value::F64(b)) => Value::F64(a * b),
+            (Value::F32(a), Value::F32(b)) => Value::F32(a * b),
+            (Value::F64(a), Value::F32(b)) => Value::F64(a * (b as f64)),
+            (Value::F32(a), Value::F64(b)) => Value::F64((a as f64) * b),
+
+            // Same-type signed integer multiplications
+            (Value::I8(a), Value::I8(b)) => Value::I8(a.wrapping_mul(b)),
+            (Value::I16(a), Value::I16(b)) => Value::I16(a.wrapping_mul(b)),
+            (Value::I32(a), Value::I32(b)) => Value::I32(a.wrapping_mul(b)),
+            (Value::I64(a), Value::I64(b)) => Value::I64(a.wrapping_mul(b)),
+
+            // Same-type unsigned integer multiplications
+            (Value::U8(a), Value::U8(b)) => Value::U8(a.wrapping_mul(b)),
+            (Value::U16(a), Value::U16(b)) => Value::U16(a.wrapping_mul(b)),
+            (Value::U32(a), Value::U32(b)) => Value::U32(a.wrapping_mul(b)),
+            (Value::U64(a), Value::U64(b)) => Value::U64(a.wrapping_mul(b)),
+            (Value::U128(a), Value::U128(b)) => Value::U128(a.wrapping_mul(b)),
+
+            // Int * Float → F64
+            (a, b) if (a.is_signed_int() || a.is_unsigned_int()) && b.is_float() => {
+                let a_f64 = a.to_f64().unwrap();
+                let b_f64 = b.to_f64().unwrap();
+                Value::F64(a_f64 * b_f64)
+            }
+            (a, b) if a.is_float() && (b.is_signed_int() || b.is_unsigned_int()) => {
+                let a_f64 = a.to_f64().unwrap();
+                let b_f64 = b.to_f64().unwrap();
+                Value::F64(a_f64 * b_f64)
+            }
+
+            // Cross-type signed integer multiplications → I64
+            (a, b) if a.is_signed_int() && b.is_signed_int() => {
+                let a_i64 = a.to_i64().unwrap();
+                let b_i64 = b.to_i64().unwrap();
+                Value::I64(a_i64.wrapping_mul(b_i64))
+            }
+
+            // Cross-type unsigned integer multiplications → U128
+            (Value::U8(a), b) if b.is_unsigned_int() => {
+                let b_val = match b {
+                    Value::U8(v) => v as u128,
+                    Value::U16(v) => v as u128,
+                    Value::U32(v) => v as u128,
+                    Value::U64(v) => v as u128,
+                    Value::U128(v) => v,
+                    _ => unreachable!(),
+                };
+                Value::U128((a as u128).wrapping_mul(b_val))
+            }
+            (Value::U16(a), b) if b.is_unsigned_int() => {
+                let b_val = match b {
+                    Value::U8(v) => v as u128,
+                    Value::U16(v) => v as u128,
+                    Value::U32(v) => v as u128,
+                    Value::U64(v) => v as u128,
+                    Value::U128(v) => v,
+                    _ => unreachable!(),
+                };
+                Value::U128((a as u128).wrapping_mul(b_val))
+            }
+            (Value::U32(a), b) if b.is_unsigned_int() => {
+                let b_val = match b {
+                    Value::U8(v) => v as u128,
+                    Value::U16(v) => v as u128,
+                    Value::U32(v) => v as u128,
+                    Value::U64(v) => v as u128,
+                    Value::U128(v) => v,
+                    _ => unreachable!(),
+                };
+                Value::U128((a as u128).wrapping_mul(b_val))
+            }
+            (Value::U64(a), b) if b.is_unsigned_int() => {
+                let b_val = match b {
+                    Value::U8(v) => v as u128,
+                    Value::U16(v) => v as u128,
+                    Value::U32(v) => v as u128,
+                    Value::U64(v) => v as u128,
+                    Value::U128(v) => v,
+                    _ => unreachable!(),
+                };
+                Value::U128((a as u128).wrapping_mul(b_val))
+            }
+            (Value::U128(a), b) if b.is_unsigned_int() => {
+                let b_val = match b {
+                    Value::U8(v) => v as u128,
+                    Value::U16(v) => v as u128,
+                    Value::U32(v) => v as u128,
+                    Value::U64(v) => v as u128,
+                    Value::U128(v) => v,
+                    _ => unreachable!(),
+                };
+                Value::U128(a.wrapping_mul(b_val))
+            }
+
+            // Signed * Unsigned → I64
+            (a, b) if a.is_signed_int() && b.is_unsigned_int() => {
+                let a_i64 = a.to_i64().unwrap();
+                let b_i64 = match b {
+                    Value::U8(v) => v as i64,
+                    Value::U16(v) => v as i64,
+                    Value::U32(v) => v as i64,
+                    Value::U64(v) => v as i64,
+                    Value::U128(v) => v as i64,
+                    _ => unreachable!(),
+                };
+                Value::I64(a_i64.wrapping_mul(b_i64))
+            }
+            (a, b) if a.is_unsigned_int() && b.is_signed_int() => {
+                let a_i64 = match a {
+                    Value::U8(v) => v as i64,
+                    Value::U16(v) => v as i64,
+                    Value::U32(v) => v as i64,
+                    Value::U64(v) => v as i64,
+                    Value::U128(v) => v as i64,
+                    _ => unreachable!(),
+                };
+                let b_i64 = b.to_i64().unwrap();
+                Value::I64(a_i64.wrapping_mul(b_i64))
+            }
+
+            // Invalid combinations
+            _ => panic!("Mismatched types"),
+        }
+    }
+}
+
+impl std::ops::Div for Value {
+    type Output = Value;
+
+    fn div(self, other: Self) -> Self::Output {
+        // Helper to check if a value is zero
+        let is_zero = |v: &Value| -> bool {
+            match v {
+                Value::I8(n) => *n == 0,
+                Value::I16(n) => *n == 0,
+                Value::I32(n) => *n == 0,
+                Value::I64(n) => *n == 0,
+                Value::U8(n) => *n == 0,
+                Value::U16(n) => *n == 0,
+                Value::U32(n) => *n == 0,
+                Value::U64(n) => *n == 0,
+                Value::U128(n) => *n == 0,
+                Value::F32(n) => *n == 0.0,
+                Value::F64(n) => *n == 0.0,
+                _ => false,
+            }
+        };
+
+        // Check for division by zero first
+        if is_zero(&other) {
+            panic!("Division by zero");
+        }
+
+        match (self, other) {
+            // Float / Float cases
+            (Value::F64(a), Value::F64(b)) => Value::F64(a / b),
+            (Value::F32(a), Value::F32(b)) => Value::F32(a / b),
+            (Value::F64(a), Value::F32(b)) => Value::F64(a / (b as f64)),
+            (Value::F32(a), Value::F64(b)) => Value::F64((a as f64) / b),
+
+            // Same-type signed integer divisions
+            (Value::I8(a), Value::I8(b)) => Value::I8(a.wrapping_div(b)),
+            (Value::I16(a), Value::I16(b)) => Value::I16(a.wrapping_div(b)),
+            (Value::I32(a), Value::I32(b)) => Value::I32(a.wrapping_div(b)),
+            (Value::I64(a), Value::I64(b)) => Value::I64(a.wrapping_div(b)),
+
+            // Same-type unsigned integer divisions
+            (Value::U8(a), Value::U8(b)) => Value::U8(a.wrapping_div(b)),
+            (Value::U16(a), Value::U16(b)) => Value::U16(a.wrapping_div(b)),
+            (Value::U32(a), Value::U32(b)) => Value::U32(a.wrapping_div(b)),
+            (Value::U64(a), Value::U64(b)) => Value::U64(a.wrapping_div(b)),
+            (Value::U128(a), Value::U128(b)) => Value::U128(a.wrapping_div(b)),
+
+            // Int / Float → F64
+            (a, b) if (a.is_signed_int() || a.is_unsigned_int()) && b.is_float() => {
+                let a_f64 = a.to_f64().unwrap();
+                let b_f64 = b.to_f64().unwrap();
+                Value::F64(a_f64 / b_f64)
+            }
+            (a, b) if a.is_float() && (b.is_signed_int() || b.is_unsigned_int()) => {
+                let a_f64 = a.to_f64().unwrap();
+                let b_f64 = b.to_f64().unwrap();
+                Value::F64(a_f64 / b_f64)
+            }
+
+            // Cross-type signed integer divisions → I64
+            (a, b) if a.is_signed_int() && b.is_signed_int() => {
+                let a_i64 = a.to_i64().unwrap();
+                let b_i64 = b.to_i64().unwrap();
+                Value::I64(a_i64.wrapping_div(b_i64))
+            }
+
+            // Cross-type unsigned integer divisions → U128
+            (Value::U8(a), b) if b.is_unsigned_int() => {
+                let b_val = match b {
+                    Value::U8(v) => v as u128,
+                    Value::U16(v) => v as u128,
+                    Value::U32(v) => v as u128,
+                    Value::U64(v) => v as u128,
+                    Value::U128(v) => v,
+                    _ => unreachable!(),
+                };
+                Value::U128((a as u128).wrapping_div(b_val))
+            }
+            (Value::U16(a), b) if b.is_unsigned_int() => {
+                let b_val = match b {
+                    Value::U8(v) => v as u128,
+                    Value::U16(v) => v as u128,
+                    Value::U32(v) => v as u128,
+                    Value::U64(v) => v as u128,
+                    Value::U128(v) => v,
+                    _ => unreachable!(),
+                };
+                Value::U128((a as u128).wrapping_div(b_val))
+            }
+            (Value::U32(a), b) if b.is_unsigned_int() => {
+                let b_val = match b {
+                    Value::U8(v) => v as u128,
+                    Value::U16(v) => v as u128,
+                    Value::U32(v) => v as u128,
+                    Value::U64(v) => v as u128,
+                    Value::U128(v) => v,
+                    _ => unreachable!(),
+                };
+                Value::U128((a as u128).wrapping_div(b_val))
+            }
+            (Value::U64(a), b) if b.is_unsigned_int() => {
+                let b_val = match b {
+                    Value::U8(v) => v as u128,
+                    Value::U16(v) => v as u128,
+                    Value::U32(v) => v as u128,
+                    Value::U64(v) => v as u128,
+                    Value::U128(v) => v,
+                    _ => unreachable!(),
+                };
+                Value::U128((a as u128).wrapping_div(b_val))
+            }
+            (Value::U128(a), b) if b.is_unsigned_int() => {
+                let b_val = match b {
+                    Value::U8(v) => v as u128,
+                    Value::U16(v) => v as u128,
+                    Value::U32(v) => v as u128,
+                    Value::U64(v) => v as u128,
+                    Value::U128(v) => v,
+                    _ => unreachable!(),
+                };
+                Value::U128(a.wrapping_div(b_val))
+            }
+
+            // Signed / Unsigned → I64
+            (a, b) if a.is_signed_int() && b.is_unsigned_int() => {
+                let a_i64 = a.to_i64().unwrap();
+                let b_i64 = match b {
+                    Value::U8(v) => v as i64,
+                    Value::U16(v) => v as i64,
+                    Value::U32(v) => v as i64,
+                    Value::U64(v) => v as i64,
+                    Value::U128(v) => v as i64,
+                    _ => unreachable!(),
+                };
+                Value::I64(a_i64.wrapping_div(b_i64))
+            }
+            (a, b) if a.is_unsigned_int() && b.is_signed_int() => {
+                let a_i64 = match a {
+                    Value::U8(v) => v as i64,
+                    Value::U16(v) => v as i64,
+                    Value::U32(v) => v as i64,
+                    Value::U64(v) => v as i64,
+                    Value::U128(v) => v as i64,
+                    _ => unreachable!(),
+                };
+                let b_i64 = b.to_i64().unwrap();
+                Value::I64(a_i64.wrapping_div(b_i64))
+            }
+
+            // Invalid combinations
+            _ => panic!("Mismatched types"),
+        }
+    }
+}
+
+impl std::ops::Rem for &Value {
+    type Output = Value;
+    fn rem(self, other: Self) -> Self::Output {
+        (self.clone()).rem(other.clone())
+    }
+}
+
+impl std::ops::Rem for Value {
+    type Output = Value;
+
+    fn rem(self, other: Self) -> Self::Output {
+        // Helper to check if a value is zero
+        let is_zero = |v: &Value| -> bool {
+            match v {
+                Value::I8(n) => *n == 0,
+                Value::I16(n) => *n == 0,
+                Value::I32(n) => *n == 0,
+                Value::I64(n) => *n == 0,
+                Value::U8(n) => *n == 0,
+                Value::U16(n) => *n == 0,
+                Value::U32(n) => *n == 0,
+                Value::U64(n) => *n == 0,
+                Value::U128(n) => *n == 0,
+                Value::F32(n) => *n == 0.0,
+                Value::F64(n) => *n == 0.0,
+                _ => false,
+            }
+        };
+
+        // Check for modulo by zero first
+        if is_zero(&other) {
+            panic!("Modulo by zero");
+        }
+
+        match (self, other) {
+            // Float % Float cases
+            (Value::F64(a), Value::F64(b)) => Value::F64(a % b),
+            (Value::F32(a), Value::F32(b)) => Value::F32(a % b),
+            (Value::F64(a), Value::F32(b)) => Value::F64(a % (b as f64)),
+            (Value::F32(a), Value::F64(b)) => Value::F64((a as f64) % b),
+
+            // Same-type signed integer modulo
+            (Value::I8(a), Value::I8(b)) => Value::I8(a.wrapping_rem(b)),
+            (Value::I16(a), Value::I16(b)) => Value::I16(a.wrapping_rem(b)),
+            (Value::I32(a), Value::I32(b)) => Value::I32(a.wrapping_rem(b)),
+            (Value::I64(a), Value::I64(b)) => Value::I64(a.wrapping_rem(b)),
+
+            // Same-type unsigned integer modulo
+            (Value::U8(a), Value::U8(b)) => Value::U8(a.wrapping_rem(b)),
+            (Value::U16(a), Value::U16(b)) => Value::U16(a.wrapping_rem(b)),
+            (Value::U32(a), Value::U32(b)) => Value::U32(a.wrapping_rem(b)),
+            (Value::U64(a), Value::U64(b)) => Value::U64(a.wrapping_rem(b)),
+            (Value::U128(a), Value::U128(b)) => Value::U128(a.wrapping_rem(b)),
+
+            // Int % Float → F64
+            (a, b) if (a.is_signed_int() || a.is_unsigned_int()) && b.is_float() => {
+                let a_f64 = a.to_f64().unwrap();
+                let b_f64 = b.to_f64().unwrap();
+                Value::F64(a_f64 % b_f64)
+            }
+            (a, b) if a.is_float() && (b.is_signed_int() || b.is_unsigned_int()) => {
+                let a_f64 = a.to_f64().unwrap();
+                let b_f64 = b.to_f64().unwrap();
+                Value::F64(a_f64 % b_f64)
+            }
+
+            // Cross-type signed integer modulo → I64
+            (a, b) if a.is_signed_int() && b.is_signed_int() => {
+                let a_i64 = a.to_i64().unwrap();
+                let b_i64 = b.to_i64().unwrap();
+                Value::I64(a_i64.wrapping_rem(b_i64))
+            }
+
+            // Cross-type unsigned integer modulo → U128
+            (Value::U8(a), b) if b.is_unsigned_int() => {
+                let b_val = match b {
+                    Value::U8(v) => v as u128,
+                    Value::U16(v) => v as u128,
+                    Value::U32(v) => v as u128,
+                    Value::U64(v) => v as u128,
+                    Value::U128(v) => v,
+                    _ => unreachable!(),
+                };
+                Value::U128((a as u128).wrapping_rem(b_val))
+            }
+            (Value::U16(a), b) if b.is_unsigned_int() => {
+                let b_val = match b {
+                    Value::U8(v) => v as u128,
+                    Value::U16(v) => v as u128,
+                    Value::U32(v) => v as u128,
+                    Value::U64(v) => v as u128,
+                    Value::U128(v) => v,
+                    _ => unreachable!(),
+                };
+                Value::U128((a as u128).wrapping_rem(b_val))
+            }
+            (Value::U32(a), b) if b.is_unsigned_int() => {
+                let b_val = match b {
+                    Value::U8(v) => v as u128,
+                    Value::U16(v) => v as u128,
+                    Value::U32(v) => v as u128,
+                    Value::U64(v) => v as u128,
+                    Value::U128(v) => v,
+                    _ => unreachable!(),
+                };
+                Value::U128((a as u128).wrapping_rem(b_val))
+            }
+            (Value::U64(a), b) if b.is_unsigned_int() => {
+                let b_val = match b {
+                    Value::U8(v) => v as u128,
+                    Value::U16(v) => v as u128,
+                    Value::U32(v) => v as u128,
+                    Value::U64(v) => v as u128,
+                    Value::U128(v) => v,
+                    _ => unreachable!(),
+                };
+                Value::U128((a as u128).wrapping_rem(b_val))
+            }
+            (Value::U128(a), b) if b.is_unsigned_int() => {
+                let b_val = match b {
+                    Value::U8(v) => v as u128,
+                    Value::U16(v) => v as u128,
+                    Value::U32(v) => v as u128,
+                    Value::U64(v) => v as u128,
+                    Value::U128(v) => v,
+                    _ => unreachable!(),
+                };
+                Value::U128(a.wrapping_rem(b_val))
+            }
+
+            // Signed % Unsigned → I64
+            (a, b) if a.is_signed_int() && b.is_unsigned_int() => {
+                let a_i64 = a.to_i64().unwrap();
+                let b_i64 = match b {
+                    Value::U8(v) => v as i64,
+                    Value::U16(v) => v as i64,
+                    Value::U32(v) => v as i64,
+                    Value::U64(v) => v as i64,
+                    Value::U128(v) => v as i64,
+                    _ => unreachable!(),
+                };
+                Value::I64(a_i64.wrapping_rem(b_i64))
+            }
+            (a, b) if a.is_unsigned_int() && b.is_signed_int() => {
+                let a_i64 = match a {
+                    Value::U8(v) => v as i64,
+                    Value::U16(v) => v as i64,
+                    Value::U32(v) => v as i64,
+                    Value::U64(v) => v as i64,
+                    Value::U128(v) => v as i64,
+                    _ => unreachable!(),
+                };
+                let b_i64 = b.to_i64().unwrap();
+                Value::I64(a_i64.wrapping_rem(b_i64))
+            }
+
+            // Invalid combinations
+            _ => panic!("Mismatched types"),
+        }
+    }
+}
+
+impl Value {
+    /// Compute power: self^other, returns F64
+    pub fn pow(&self, other: &Value) -> Value {
+        let base = self.to_f64().expect("pow requires numeric value");
+        let exp = other.to_f64().expect("pow requires numeric exponent");
+        Value::F64(base.powf(exp))
+    }
+
+    /// Compute absolute value, preserving type for integers
+    pub fn abs(&self) -> Value {
+        match self {
+            // Signed integers use abs (handle potential overflow for MIN values)
+            Value::I8(v) => Value::I8(v.wrapping_abs()),
+            Value::I16(v) => Value::I16(v.wrapping_abs()),
+            Value::I32(v) => Value::I32(v.wrapping_abs()),
+            Value::I64(v) => Value::I64(v.wrapping_abs()),
+            // Unsigned integers are already non-negative
+            Value::U8(v) => Value::U8(*v),
+            Value::U16(v) => Value::U16(*v),
+            Value::U32(v) => Value::U32(*v),
+            Value::U64(v) => Value::U64(*v),
+            Value::U128(v) => Value::U128(*v),
+            // Floats
+            Value::F32(v) => Value::F32(v.abs()),
+            Value::F64(v) => Value::F64(v.abs()),
+            _ => panic!("abs requires numeric value"),
+        }
+    }
+
+    /// Compute square root, returns F64
+    pub fn sqrt(&self) -> Value {
+        let val = self.to_f64().expect("sqrt requires numeric value");
+        Value::F64(val.sqrt())
+    }
+
+    /// Return the minimum of self and other
+    pub fn min(&self, other: &Value) -> Value {
+        // For same types, compare directly
+        match (self, other) {
+            (Value::I8(a), Value::I8(b)) => Value::I8(*a.min(b)),
+            (Value::I16(a), Value::I16(b)) => Value::I16(*a.min(b)),
+            (Value::I32(a), Value::I32(b)) => Value::I32(*a.min(b)),
+            (Value::I64(a), Value::I64(b)) => Value::I64(*a.min(b)),
+            (Value::U8(a), Value::U8(b)) => Value::U8(*a.min(b)),
+            (Value::U16(a), Value::U16(b)) => Value::U16(*a.min(b)),
+            (Value::U32(a), Value::U32(b)) => Value::U32(*a.min(b)),
+            (Value::U64(a), Value::U64(b)) => Value::U64(*a.min(b)),
+            (Value::U128(a), Value::U128(b)) => Value::U128(*a.min(b)),
+            (Value::F32(a), Value::F32(b)) => Value::F32(a.min(*b)),
+            (Value::F64(a), Value::F64(b)) => Value::F64(a.min(*b)),
+            // Cross-type: promote to f64 and compare
+            _ => {
+                let a_f64 = self.to_f64().expect("min requires numeric value");
+                let b_f64 = other.to_f64().expect("min requires numeric value");
+                Value::F64(a_f64.min(b_f64))
+            }
+        }
+    }
+
+    /// Return the maximum of self and other
+    pub fn max(&self, other: &Value) -> Value {
+        // For same types, compare directly
+        match (self, other) {
+            (Value::I8(a), Value::I8(b)) => Value::I8(*a.max(b)),
+            (Value::I16(a), Value::I16(b)) => Value::I16(*a.max(b)),
+            (Value::I32(a), Value::I32(b)) => Value::I32(*a.max(b)),
+            (Value::I64(a), Value::I64(b)) => Value::I64(*a.max(b)),
+            (Value::U8(a), Value::U8(b)) => Value::U8(*a.max(b)),
+            (Value::U16(a), Value::U16(b)) => Value::U16(*a.max(b)),
+            (Value::U32(a), Value::U32(b)) => Value::U32(*a.max(b)),
+            (Value::U64(a), Value::U64(b)) => Value::U64(*a.max(b)),
+            (Value::U128(a), Value::U128(b)) => Value::U128(*a.max(b)),
+            (Value::F32(a), Value::F32(b)) => Value::F32(a.max(*b)),
+            (Value::F64(a), Value::F64(b)) => Value::F64(a.max(*b)),
+            // Cross-type: promote to f64 and compare
+            _ => {
+                let a_f64 = self.to_f64().expect("max requires numeric value");
+                let b_f64 = other.to_f64().expect("max requires numeric value");
+                Value::F64(a_f64.max(b_f64))
+            }
+        }
+    }
+}
+
 impl PartialEq<ID> for Value {
     fn eq(&self, other: &ID) -> bool {
         match self {
@@ -2422,5 +3307,550 @@ mod tests {
         let arr_original = Value::Array(vec![Value::I32(1), Value::I32(2)]);
         let arr_cloned = arr_original.clone();
         assert_eq!(arr_original, arr_cloned);
+    }
+
+    // ============================================================================
+    // Add Trait Tests
+    // ============================================================================
+
+    #[test]
+    fn test_add_same_type_integers() {
+        // Same-type signed integers
+        assert_eq!((Value::I8(10) + Value::I8(5)), Value::I8(15));
+        assert_eq!((Value::I16(100) + Value::I16(50)), Value::I16(150));
+        assert_eq!((Value::I32(1000) + Value::I32(500)), Value::I32(1500));
+        assert_eq!((Value::I64(10000) + Value::I64(5000)), Value::I64(15000));
+
+        // Same-type unsigned integers
+        assert_eq!((Value::U8(10) + Value::U8(5)), Value::U8(15));
+        assert_eq!((Value::U16(100) + Value::U16(50)), Value::U16(150));
+        assert_eq!((Value::U32(1000) + Value::U32(500)), Value::U32(1500));
+        assert_eq!((Value::U64(10000) + Value::U64(5000)), Value::U64(15000));
+        assert_eq!(
+            (Value::U128(100000) + Value::U128(50000)),
+            Value::U128(150000)
+        );
+    }
+
+    #[test]
+    fn test_add_same_type_floats() {
+        let result = Value::F32(3.5) + Value::F32(2.5);
+        if let Value::F32(v) = result {
+            assert!((v - 6.0).abs() < f32::EPSILON);
+        } else {
+            panic!("Expected F32");
+        }
+
+        let result = Value::F64(3.5) + Value::F64(2.5);
+        if let Value::F64(v) = result {
+            assert!((v - 6.0).abs() < f64::EPSILON);
+        } else {
+            panic!("Expected F64");
+        }
+    }
+
+    #[test]
+    fn test_add_float_cross_type() {
+        // F32 + F64 → F64
+        let result = Value::F32(3.5) + Value::F64(2.5);
+        if let Value::F64(v) = result {
+            assert!((v - 6.0).abs() < f64::EPSILON);
+        } else {
+            panic!("Expected F64");
+        }
+
+        // F64 + F32 → F64
+        let result = Value::F64(3.5) + Value::F32(2.5);
+        if let Value::F64(v) = result {
+            assert!((v - 6.0).abs() < f64::EPSILON);
+        } else {
+            panic!("Expected F64");
+        }
+    }
+
+    #[test]
+    fn test_add_int_plus_float_promotes_to_f64() {
+        // I32 + F64 → F64
+        let result = Value::I32(10) + Value::F64(2.5);
+        if let Value::F64(v) = result {
+            assert!((v - 12.5).abs() < f64::EPSILON);
+        } else {
+            panic!("Expected F64");
+        }
+
+        // F32 + I64 → F64
+        let result = Value::F32(5.5) + Value::I64(10);
+        if let Value::F64(v) = result {
+            assert!((v - 15.5).abs() < f64::EPSILON);
+        } else {
+            panic!("Expected F64");
+        }
+
+        // U8 + F32 → F64
+        let result = Value::U8(10) + Value::F32(2.5);
+        if let Value::F64(v) = result {
+            assert!((v - 12.5).abs() < f64::EPSILON);
+        } else {
+            panic!("Expected F64");
+        }
+
+        // I8 + F64 → F64
+        let result = Value::I8(5) + Value::F64(3.5);
+        if let Value::F64(v) = result {
+            assert!((v - 8.5).abs() < f64::EPSILON);
+        } else {
+            panic!("Expected F64");
+        }
+    }
+
+    #[test]
+    fn test_add_cross_type_signed_integers() {
+        // Cross-type signed integers → I64
+        let result = Value::I8(10) + Value::I32(100);
+        assert_eq!(result, Value::I64(110));
+
+        let result = Value::I16(50) + Value::I64(1000);
+        assert_eq!(result, Value::I64(1050));
+
+        let result = Value::I32(100) + Value::I8(5);
+        assert_eq!(result, Value::I64(105));
+    }
+
+    #[test]
+    fn test_add_cross_type_unsigned_integers() {
+        // Cross-type unsigned integers → U128
+        let result = Value::U8(10) + Value::U32(100);
+        assert_eq!(result, Value::U128(110));
+
+        let result = Value::U16(50) + Value::U64(1000);
+        assert_eq!(result, Value::U128(1050));
+
+        let result = Value::U32(100) + Value::U128(5000);
+        assert_eq!(result, Value::U128(5100));
+    }
+
+    #[test]
+    fn test_add_signed_plus_unsigned() {
+        // Signed + Unsigned → I64
+        let result = Value::I32(10) + Value::U32(5);
+        assert_eq!(result, Value::I64(15));
+
+        let result = Value::U8(100) + Value::I64(50);
+        assert_eq!(result, Value::I64(150));
+
+        let result = Value::I8(10) + Value::U16(20);
+        assert_eq!(result, Value::I64(30));
+    }
+
+    #[test]
+    fn test_add_string_concatenation() {
+        let result = Value::String("Hello".to_string()) + Value::String(" World".to_string());
+        assert_eq!(result, Value::String("Hello World".to_string()));
+
+        let result = Value::String("".to_string()) + Value::String("test".to_string());
+        assert_eq!(result, Value::String("test".to_string()));
+    }
+
+    #[test]
+    fn test_add_array_concatenation() {
+        let a = Value::Array(vec![Value::I32(1), Value::I32(2)]);
+        let b = Value::Array(vec![Value::I32(3), Value::I32(4)]);
+        let result = a + b;
+
+        if let Value::Array(arr) = result {
+            assert_eq!(arr.len(), 4);
+            assert_eq!(arr[0], Value::I32(1));
+            assert_eq!(arr[1], Value::I32(2));
+            assert_eq!(arr[2], Value::I32(3));
+            assert_eq!(arr[3], Value::I32(4));
+        } else {
+            panic!("Expected Array");
+        }
+    }
+
+    #[test]
+    #[should_panic(expected = "Mismatched types")]
+    fn test_add_invalid_combinations() {
+        // String + I32 should error
+        let _ = Value::String("test".to_string()) + Value::I32(42);
+
+        // I32 + String should error
+        let _ = Value::I32(42) + Value::String("test".to_string());
+
+        // Boolean + I32 should error
+        let _ = Value::Boolean(true) + Value::I32(42);
+
+        // Array + I32 should error
+        let _ = Value::Array(vec![Value::I32(1)]) + Value::I32(42);
+
+        // String + Array should error
+        let _ = Value::String("test".to_string()) + Value::Array(vec![Value::I32(1)]);
+    }
+
+    // ============================================================================
+    // Sub Trait Tests
+    // ============================================================================
+
+    #[test]
+    fn test_sub_same_type_integers() {
+        // Same-type signed integers
+        assert_eq!((Value::I8(15) - Value::I8(5)), Value::I8(10));
+        assert_eq!((Value::I16(150) - Value::I16(50)), Value::I16(100));
+        assert_eq!((Value::I32(1500) - Value::I32(500)), Value::I32(1000));
+        assert_eq!((Value::I64(15000) - Value::I64(5000)), Value::I64(10000));
+
+        // Same-type unsigned integers
+        assert_eq!((Value::U8(15) - Value::U8(5)), Value::U8(10));
+        assert_eq!((Value::U16(150) - Value::U16(50)), Value::U16(100));
+        assert_eq!((Value::U32(1500) - Value::U32(500)), Value::U32(1000));
+        assert_eq!((Value::U64(15000) - Value::U64(5000)), Value::U64(10000));
+        assert_eq!(
+            (Value::U128(150000) - Value::U128(50000)),
+            Value::U128(100000)
+        );
+    }
+
+    #[test]
+    fn test_sub_same_type_floats() {
+        let result = Value::F32(6.0) - Value::F32(2.5);
+        if let Value::F32(v) = result {
+            assert!((v - 3.5).abs() < f32::EPSILON);
+        } else {
+            panic!("Expected F32");
+        }
+
+        let result = Value::F64(6.0) - Value::F64(2.5);
+        if let Value::F64(v) = result {
+            assert!((v - 3.5).abs() < f64::EPSILON);
+        } else {
+            panic!("Expected F64");
+        }
+    }
+
+    #[test]
+    fn test_sub_float_cross_type() {
+        // F32 - F64 → F64
+        let result = Value::F32(6.0) - Value::F64(2.5);
+        if let Value::F64(v) = result {
+            assert!((v - 3.5).abs() < f64::EPSILON);
+        } else {
+            panic!("Expected F64");
+        }
+
+        // F64 - F32 → F64
+        let result = Value::F64(6.0) - Value::F32(2.5);
+        if let Value::F64(v) = result {
+            assert!((v - 3.5).abs() < f64::EPSILON);
+        } else {
+            panic!("Expected F64");
+        }
+    }
+
+    #[test]
+    fn test_sub_int_minus_float_promotes_to_f64() {
+        // I32 - F64 → F64
+        let result = Value::I32(10) - Value::F64(2.5);
+        if let Value::F64(v) = result {
+            assert!((v - 7.5).abs() < f64::EPSILON);
+        } else {
+            panic!("Expected F64");
+        }
+
+        // F32 - I64 → F64
+        let result = Value::F32(15.5) - Value::I64(10);
+        if let Value::F64(v) = result {
+            assert!((v - 5.5).abs() < f64::EPSILON);
+        } else {
+            panic!("Expected F64");
+        }
+    }
+
+    #[test]
+    fn test_sub_cross_type_signed_integers() {
+        // Cross-type signed integers → I64
+        let result = Value::I8(100) - Value::I32(10);
+        assert_eq!(result, Value::I64(90));
+
+        let result = Value::I16(1050) - Value::I64(50);
+        assert_eq!(result, Value::I64(1000));
+    }
+
+    #[test]
+    fn test_sub_cross_type_unsigned_integers() {
+        // Cross-type unsigned integers → U128
+        let result = Value::U8(110) - Value::U32(10);
+        assert_eq!(result, Value::U128(100));
+
+        let result = Value::U16(1050) - Value::U64(50);
+        assert_eq!(result, Value::U128(1000));
+    }
+
+    #[test]
+    fn test_sub_signed_minus_unsigned() {
+        // Signed - Unsigned → I64
+        let result = Value::I32(15) - Value::U32(5);
+        assert_eq!(result, Value::I64(10));
+
+        let result = Value::U8(150) - Value::I64(50);
+        assert_eq!(result, Value::I64(100));
+    }
+
+    #[test]
+    #[should_panic(expected = "Mismatched types")]
+    fn test_sub_invalid_combinations() {
+        // String - I32 should error
+        let _ = Value::String("test".to_string()) - Value::I32(42);
+
+        // Boolean - I32 should error
+        let _ = Value::Boolean(true) - Value::I32(42);
+
+        // Array - Array should error
+        let _ = Value::Array(vec![Value::I32(1)]) - Value::Array(vec![Value::I32(2)]);
+    }
+
+    // ============================================================================
+    // Mul Trait Tests
+    // ============================================================================
+
+    #[test]
+    fn test_mul_same_type_integers() {
+        // Same-type signed integers
+        assert_eq!((Value::I8(3) * Value::I8(5)), Value::I8(15));
+        assert_eq!((Value::I16(10) * Value::I16(5)), Value::I16(50));
+        assert_eq!((Value::I32(100) * Value::I32(5)), Value::I32(500));
+        assert_eq!((Value::I64(1000) * Value::I64(5)), Value::I64(5000));
+
+        // Same-type unsigned integers
+        assert_eq!((Value::U8(3) * Value::U8(5)), Value::U8(15));
+        assert_eq!((Value::U16(10) * Value::U16(5)), Value::U16(50));
+        assert_eq!((Value::U32(100) * Value::U32(5)), Value::U32(500));
+        assert_eq!((Value::U64(1000) * Value::U64(5)), Value::U64(5000));
+        assert_eq!((Value::U128(10000) * Value::U128(5)), Value::U128(50000));
+    }
+
+    #[test]
+    fn test_mul_same_type_floats() {
+        let result = Value::F32(3.0) * Value::F32(2.5);
+        if let Value::F32(v) = result {
+            assert!((v - 7.5).abs() < f32::EPSILON);
+        } else {
+            panic!("Expected F32");
+        }
+
+        let result = Value::F64(3.0) * Value::F64(2.5);
+        if let Value::F64(v) = result {
+            assert!((v - 7.5).abs() < f64::EPSILON);
+        } else {
+            panic!("Expected F64");
+        }
+    }
+
+    #[test]
+    fn test_mul_float_cross_type() {
+        // F32 * F64 → F64
+        let result = Value::F32(3.0) * Value::F64(2.5);
+        if let Value::F64(v) = result {
+            assert!((v - 7.5).abs() < f64::EPSILON);
+        } else {
+            panic!("Expected F64");
+        }
+
+        // F64 * F32 → F64
+        let result = Value::F64(3.0) * Value::F32(2.5);
+        if let Value::F64(v) = result {
+            assert!((v - 7.5).abs() < f64::EPSILON);
+        } else {
+            panic!("Expected F64");
+        }
+    }
+
+    #[test]
+    fn test_mul_int_times_float_promotes_to_f64() {
+        // I32 * F64 → F64
+        let result = Value::I32(10) * Value::F64(2.5);
+        if let Value::F64(v) = result {
+            assert!((v - 25.0).abs() < f64::EPSILON);
+        } else {
+            panic!("Expected F64");
+        }
+
+        // F32 * I64 → F64
+        let result = Value::F32(5.5) * Value::I64(10);
+        if let Value::F64(v) = result {
+            assert!((v - 55.0).abs() < f64::EPSILON);
+        } else {
+            panic!("Expected F64");
+        }
+    }
+
+    #[test]
+    fn test_mul_cross_type_signed_integers() {
+        // Cross-type signed integers → I64
+        let result = Value::I8(10) * Value::I32(10);
+        assert_eq!(result, Value::I64(100));
+
+        let result = Value::I16(50) * Value::I64(20);
+        assert_eq!(result, Value::I64(1000));
+    }
+
+    #[test]
+    fn test_mul_cross_type_unsigned_integers() {
+        // Cross-type unsigned integers → U128
+        let result = Value::U8(10) * Value::U32(10);
+        assert_eq!(result, Value::U128(100));
+
+        let result = Value::U16(50) * Value::U64(20);
+        assert_eq!(result, Value::U128(1000));
+    }
+
+    #[test]
+    fn test_mul_signed_times_unsigned() {
+        // Signed * Unsigned → I64
+        let result = Value::I32(10) * Value::U32(5);
+        assert_eq!(result, Value::I64(50));
+
+        let result = Value::U8(10) * Value::I64(5);
+        assert_eq!(result, Value::I64(50));
+    }
+
+    #[test]
+    #[should_panic(expected = "Mismatched types")]
+    fn test_mul_invalid_combinations() {
+        // String * I32 should error
+        let _ = Value::String("test".to_string()) * Value::I32(42);
+
+        // Boolean * I32 should error
+        let _ = Value::Boolean(true) * Value::I32(42);
+
+        // Array * Array should error
+        let _ = Value::Array(vec![Value::I32(1)]) * Value::Array(vec![Value::I32(2)]);
+    }
+
+    // ============================================================================
+    // Div Trait Tests
+    // ============================================================================
+
+    #[test]
+    fn test_div_same_type_integers() {
+        // Same-type signed integers
+        assert_eq!((Value::I8(15) / Value::I8(5)), Value::I8(3));
+        assert_eq!((Value::I16(150) / Value::I16(5)), Value::I16(30));
+        assert_eq!((Value::I32(1500) / Value::I32(5)), Value::I32(300));
+        assert_eq!((Value::I64(15000) / Value::I64(5)), Value::I64(3000));
+
+        // Same-type unsigned integers
+        assert_eq!((Value::U8(15) / Value::U8(5)), Value::U8(3));
+        assert_eq!((Value::U16(150) / Value::U16(5)), Value::U16(30));
+        assert_eq!((Value::U32(1500) / Value::U32(5)), Value::U32(300));
+        assert_eq!((Value::U64(15000) / Value::U64(5)), Value::U64(3000));
+        assert_eq!((Value::U128(150000) / Value::U128(5)), Value::U128(30000));
+    }
+
+    #[test]
+    fn test_div_same_type_floats() {
+        let result = Value::F32(7.5) / Value::F32(2.5);
+        if let Value::F32(v) = result {
+            assert!((v - 3.0).abs() < f32::EPSILON);
+        } else {
+            panic!("Expected F32");
+        }
+
+        let result = Value::F64(7.5) / Value::F64(2.5);
+        if let Value::F64(v) = result {
+            assert!((v - 3.0).abs() < f64::EPSILON);
+        } else {
+            panic!("Expected F64");
+        }
+    }
+
+    #[test]
+    fn test_div_float_cross_type() {
+        // F32 / F64 → F64
+        let result = Value::F32(7.5) / Value::F64(2.5);
+        if let Value::F64(v) = result {
+            assert!((v - 3.0).abs() < f64::EPSILON);
+        } else {
+            panic!("Expected F64");
+        }
+
+        // F64 / F32 → F64
+        let result = Value::F64(7.5) / Value::F32(2.5);
+        if let Value::F64(v) = result {
+            assert!((v - 3.0).abs() < f64::EPSILON);
+        } else {
+            panic!("Expected F64");
+        }
+    }
+
+    #[test]
+    fn test_div_int_div_float_promotes_to_f64() {
+        // I32 / F64 → F64
+        let result = Value::I32(10) / Value::F64(2.5);
+        if let Value::F64(v) = result {
+            assert!((v - 4.0).abs() < f64::EPSILON);
+        } else {
+            panic!("Expected F64");
+        }
+
+        // F32 / I64 → F64
+        let result = Value::F32(15.0) / Value::I64(5);
+        if let Value::F64(v) = result {
+            assert!((v - 3.0).abs() < f64::EPSILON);
+        } else {
+            panic!("Expected F64");
+        }
+    }
+
+    #[test]
+    fn test_div_cross_type_signed_integers() {
+        // Cross-type signed integers → I64
+        let result = Value::I8(100) / Value::I32(10);
+        assert_eq!(result, Value::I64(10));
+
+        let result = Value::I16(1000) / Value::I64(50);
+        assert_eq!(result, Value::I64(20));
+    }
+
+    #[test]
+    fn test_div_cross_type_unsigned_integers() {
+        // Cross-type unsigned integers → U128
+        let result = Value::U8(100) / Value::U32(10);
+        assert_eq!(result, Value::U128(10));
+
+        let result = Value::U16(1000) / Value::U64(50);
+        assert_eq!(result, Value::U128(20));
+    }
+
+    #[test]
+    fn test_div_signed_div_unsigned() {
+        // Signed / Unsigned → I64
+        let result = Value::I32(50) / Value::U32(5);
+        assert_eq!(result, Value::I64(10));
+
+        let result = Value::U8(100) / Value::I64(5);
+        assert_eq!(result, Value::I64(20));
+    }
+
+    #[test]
+    #[should_panic(expected = "Mismatched types")]
+    fn test_div_invalid_combinations() {
+        // String / I32 should error
+        let _ = Value::String("test".to_string()) / Value::I32(42);
+    }
+
+    #[test]
+    #[should_panic(expected = "Division by zero")]
+    fn test_div_by_zero_returns_error() {
+        // Integer division by zero
+        let _ = Value::I32(42) / Value::I32(0);
+
+        // Unsigned division by zero
+        let _ = Value::U64(42) / Value::U64(0);
+
+        // Float division by zero
+        let _ = Value::F64(42.0) / Value::F64(0.0);
+
+        // Cross-type division by zero
+        let _ = Value::I32(42) / Value::F64(0.0);
     }
 }

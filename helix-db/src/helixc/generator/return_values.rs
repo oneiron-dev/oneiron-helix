@@ -54,6 +54,8 @@ pub struct ReturnValueStruct {
     pub aggregate_properties: Vec<String>, // Properties to group by (for closure-style aggregates)
     pub is_count_aggregate: bool,   // True for COUNT mode aggregates
     pub closure_param_name: Option<String>, // HQL closure parameter name (e.g., "e" from entries::|e|)
+    pub is_primitive: bool,                 // True for Count/Boolean/Scalar - emit variable directly
+    pub primitive_literal_value: Option<GenRef<String>>, // For primitives with field access (e.g., user::ID)
 }
 
 impl ReturnValueStruct {
@@ -72,6 +74,8 @@ impl ReturnValueStruct {
             aggregate_properties: Vec::new(),
             is_count_aggregate: false,
             closure_param_name: None,
+            is_primitive: false,
+            primitive_literal_value: None,
         }
     }
 
@@ -234,19 +238,36 @@ impl ReturnValueStruct {
                 let (field_type, _is_nested, nested_name) = match &field_info.field_type {
                     ReturnFieldType::Simple(ty) => (ty.to_string(), false, None),
                     ReturnFieldType::Nested(_) => {
-                        // Nested fields become Vec<NestedTypeName> or NestedTypeName (if is_first)
+                        // Nested fields become Vec<NestedTypeName> or NestedTypeName (if is_first or variable reference)
                         // Use the nested_struct_name from the source if available, otherwise fall back to field name
-                        let (nested_type_name, is_first) =
+                        let (nested_type_name, is_first, is_variable_ref) =
                             if let ReturnFieldSource::NestedTraversal {
                                 nested_struct_name: Some(name),
                                 is_first,
+                                traversal_code,
+                                traversal_type,
+                                closure_source_var,
                                 ..
                             } = &field_info.source
                             {
-                                (name.clone(), *is_first)
+                                // Check if this is a variable reference (empty traversal code, direct variable)
+                                // A variable reference has empty traversal code and is not a real graph traversal
+                                let trav_code_empty = match traversal_code {
+                                    Some(code) => code.trim().is_empty(),
+                                    None => false,
+                                };
+                                let trav_type_is_placeholder = match traversal_type {
+                                    None => true,
+                                    Some(crate::helixc::generator::traversal_steps::TraversalType::Empty) => true,
+                                    Some(crate::helixc::generator::traversal_steps::TraversalType::Ref) => true, // Default traversal type
+                                    Some(_) => false,
+                                };
+                                let is_var_ref = trav_code_empty && trav_type_is_placeholder && closure_source_var.is_some();
+                                (name.clone(), *is_first, is_var_ref)
                             } else {
                                 (
                                     format!("{}ReturnType", capitalize_first(&field_info.name)),
+                                    false,
                                     false,
                                 )
                             };
@@ -254,8 +275,8 @@ impl ReturnValueStruct {
                             .get(&nested_type_name)
                             .copied()
                             .unwrap_or(false);
-                        // For ::FIRST, use single struct type; otherwise use Vec
-                        let type_ref = if is_first {
+                        // For ::FIRST or variable references, use single struct type; otherwise use Vec
+                        let type_ref = if is_first || is_variable_ref {
                             if has_lt {
                                 format!("{}<'a>", nested_type_name)
                             } else {
@@ -301,6 +322,7 @@ impl ReturnValueStruct {
         struct_def.aggregate_properties = aggregate_properties;
         struct_def.is_count_aggregate = is_count_aggregate;
         struct_def.closure_param_name = closure_param_name;
+        struct_def.is_primitive = false;
         struct_def
     }
 
@@ -496,6 +518,11 @@ pub enum ReturnFieldSource {
         own_closure_param: Option<String>, // This traversal's own closure parameter if it ends with a Closure step
         requires_full_traversal: bool, // True if traversal has graph navigation steps (Out, In, COUNT, etc.)
         is_first: bool,                // True if ::FIRST was used (should_collect = ToObj)
+    },
+    /// Computed expression field (e.g., ADD, COUNT operations)
+    /// Used for fields like `num_clusters: ADD(_::Out<HasRailwayCluster>::COUNT, _::Out<HasObjectCluster>::COUNT)`
+    ComputedExpression {
+        expression: Box<crate::helixc::parser::types::Expression>,
     },
 }
 

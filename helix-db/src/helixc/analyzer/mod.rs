@@ -25,6 +25,7 @@ use crate::{
         },
     },
 };
+use indexmap::IndexMap;
 use itertools::Itertools;
 use serde::Serialize;
 use std::{
@@ -56,9 +57,9 @@ pub(crate) struct Ctx<'a> {
     pub(super) node_set: HashSet<&'a str>,
     pub(super) vector_set: HashSet<&'a str>,
     pub(super) edge_map: HashMap<&'a str, &'a EdgeSchema>,
-    pub(super) node_fields: HashMap<&'a str, HashMap<&'a str, Cow<'a, Field>>>,
-    pub(super) edge_fields: HashMap<&'a str, HashMap<&'a str, Cow<'a, Field>>>,
-    pub(super) vector_fields: HashMap<&'a str, HashMap<&'a str, Cow<'a, Field>>>,
+    pub(super) node_fields: IndexMap<&'a str, IndexMap<&'a str, Cow<'a, Field>>>,
+    pub(super) edge_fields: IndexMap<&'a str, IndexMap<&'a str, Cow<'a, Field>>>,
+    pub(super) vector_fields: IndexMap<&'a str, IndexMap<&'a str, Cow<'a, Field>>>,
     pub(super) all_schemas: SchemaVersionMap<'a>,
     pub(super) diagnostics: Vec<Diagnostic>,
     pub(super) output: GeneratedSource,
@@ -126,7 +127,7 @@ impl<'a> Ctx<'a> {
     pub(super) fn get_item_fields(
         &self,
         item_type: &Type,
-    ) -> Option<&HashMap<&str, Cow<'_, Field>>> {
+    ) -> Option<&IndexMap<&str, Cow<'_, Field>>> {
         match item_type {
             Type::Node(Some(node_type)) | Type::Nodes(Some(node_type)) => {
                 self.node_fields.get(node_type.as_str())
@@ -206,7 +207,7 @@ pub struct NodeData {
 }
 
 impl NodeData {
-    fn from_entry(val: (&&str, &HashMap<&str, Cow<Field>>)) -> Self {
+    fn from_entry(val: (&&str, &IndexMap<&str, Cow<Field>>)) -> Self {
         let properties = val
             .1
             .iter()

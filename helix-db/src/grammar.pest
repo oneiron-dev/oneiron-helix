@@ -244,7 +244,7 @@ embed_method = { "Embed" ~ "(" ~ (identifier | string_literal) ~ ")" }
 // ---------------------------------------------------------------------
 math_function_call = { math_function_name ~ "(" ~ function_args? ~ ")" }
 function_args      = { math_expression ~ ("," ~ math_expression)* }
-math_expression    = { math_function_call | evaluates_to_number | anonymous_traversal }
+math_expression    = { math_function_call | id_traversal | evaluates_to_number | anonymous_traversal  }
 
 math_function_name = {
     // Arithmetic (binary)

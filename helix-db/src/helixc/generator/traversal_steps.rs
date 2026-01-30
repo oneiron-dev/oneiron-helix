@@ -23,6 +23,14 @@ pub struct NestedTraversalInfo {
     pub own_closure_param: Option<String>, // This traversal's own closure parameter if it ends with a Closure step (e.g., "cluster")
 }
 
+/// Information about a computed expression field in an object selection
+/// Used for fields like `num_clusters: ADD(_::Out<HasRailwayCluster>::COUNT, _::Out<HasObjectCluster>::COUNT)`
+#[derive(Clone, Debug)]
+pub struct ComputedExpressionInfo {
+    pub field_name: String,
+    pub expression: Box<crate::helixc::parser::types::Expression>,
+}
+
 #[derive(Clone)]
 pub enum TraversalType {
     FromSingle(GenRef<String>),
@@ -129,6 +137,8 @@ pub struct Traversal {
     /// Maps output field name -> source property name for renamed fields
     /// e.g., "post" -> "content" for `post: content`, "file_id" -> "ID"
     pub field_name_mappings: std::collections::HashMap<String, String>,
+    /// Maps output field name -> computed expression info for fields like `num_clusters: ADD(...)`
+    pub computed_expressions: std::collections::HashMap<String, ComputedExpressionInfo>,
 }
 
 impl Display for Traversal {
@@ -409,6 +419,7 @@ impl Default for Traversal {
             is_reused_variable: false,
             closure_param_name: None,
             field_name_mappings: std::collections::HashMap::new(),
+            computed_expressions: std::collections::HashMap::new(),
         }
     }
 }

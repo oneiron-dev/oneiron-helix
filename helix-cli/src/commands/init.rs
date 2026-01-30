@@ -6,9 +6,10 @@ use crate::commands::integrations::helix::HelixManager;
 use crate::config::{CloudConfig, HelixConfig};
 use crate::docker::DockerManager;
 use crate::errors::project_error;
+use crate::output::{Operation, Step};
 use crate::project::ProjectContext;
 use crate::prompts;
-use crate::utils::{print_instructions, print_status, print_success};
+use crate::utils::print_instructions;
 use eyre::Result;
 use std::env;
 use std::fs;
@@ -72,10 +73,7 @@ async fn run_init_inner(
         .into());
     }
 
-    print_status(
-        "INIT",
-        &format!("Initializing Helix project: {project_name}"),
-    );
+    let op = Operation::new("Initializing", project_name);
 
     // Create project directory if it doesn't exist
     let project_dir_existed = project_dir.exists();
@@ -140,7 +138,7 @@ async fn run_init_inner(
 
                     // Prompt user to create cluster now
                     println!();
-                    print_status("CLUSTER", "Helix Cloud instance configuration saved");
+                    Step::verbose_substep("Helix Cloud instance configuration saved");
                     println!("This will open Stripe for payment and provision your cluster.");
 
                     let should_create = if prompts::is_interactive() {
@@ -161,13 +159,10 @@ async fn run_init_inner(
                         crate::commands::create_cluster::run(project_name, region).await?;
                     } else {
                         println!();
-                        print_status(
-                            "INFO",
-                            &format!(
-                                "Cluster creation skipped. Run 'helix create-cluster {}' when ready.",
-                                project_name
-                            ),
-                        );
+                        crate::output::info(&format!(
+                            "Cluster creation skipped. Run 'helix create-cluster {}' when ready.",
+                            project_name
+                        ));
                     }
                 }
                 CloudDeploymentTypeCommand::Ecr { .. } => {
@@ -206,7 +201,7 @@ async fn run_init_inner(
 
                     config.save_to_file(&config_path)?;
 
-                    print_status("ECR", "AWS ECR repository initialized successfully");
+                    Step::verbose_substep("AWS ECR repository initialized successfully");
                 }
                 CloudDeploymentTypeCommand::Fly {
                     auth,
@@ -258,10 +253,7 @@ async fn run_init_inner(
         }
     }
 
-    print_success(&format!(
-        "Helix project initialized in {}",
-        project_dir.display()
-    ));
+    op.success();
     let queries_path_clean = queries_path.trim_end_matches('/');
     print_instructions(
         "Next steps:",

@@ -81,9 +81,14 @@ pub(crate) fn validate_statements<'a>(
                 matches!(rhs_ty, Type::Node(_) | Type::Edge(_) | Type::Vector(_))
             };
 
+            let mut var_info = VariableInfo::new(rhs_ty, is_single);
+            // Store projection metadata from the traversal if available
+            if let Some(GeneratedStatement::Traversal(ref tr)) = stmt {
+                var_info.store_projection_metadata(tr);
+            }
             scope.insert(
                 assign.variable.as_str(),
-                VariableInfo::new(rhs_ty, is_single),
+                var_info,
             );
 
             stmt.as_ref()?;

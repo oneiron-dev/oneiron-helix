@@ -1,7 +1,9 @@
 use std::{borrow::Cow, collections::HashMap};
 
+use indexmap::IndexMap;
+
 use crate::helixc::{
-    analyzer::{Ctx, error_codes::ErrorCode, errors::push_schema_err},
+    analyzer::{error_codes::ErrorCode, errors::push_schema_err, Ctx},
     parser::{
         errors::ParserError,
         location::Loc,
@@ -9,7 +11,7 @@ use crate::helixc::{
     },
 };
 
-type FieldLookup<'a> = HashMap<&'a str, HashMap<&'a str, Cow<'a, Field>>>;
+type FieldLookup<'a> = IndexMap<&'a str, IndexMap<&'a str, Cow<'a, Field>>>;
 
 pub(crate) struct SchemaVersionMap<'a>(
     HashMap<usize, (FieldLookup<'a>, FieldLookup<'a>, FieldLookup<'a>)>,
@@ -19,7 +21,7 @@ impl<'a> SchemaVersionMap<'a> {
     pub fn get_latest(&self) -> (FieldLookup<'a>, FieldLookup<'a>, FieldLookup<'a>) {
         self.0
             .get(self.0.keys().max().unwrap_or(&1))
-            .unwrap_or(&(HashMap::new(), HashMap::new(), HashMap::new()))
+            .unwrap_or(&(IndexMap::new(), IndexMap::new(), IndexMap::new()))
             .clone()
     }
 
@@ -37,11 +39,7 @@ pub(crate) fn build_field_lookups<'a>(src: &'a Source) -> SchemaVersionMap<'a> {
                     .node_schemas
                     .iter()
                     .map(|n| {
-                        let mut props = n
-                            .fields
-                            .iter()
-                            .map(|f| (f.name.as_str(), Cow::Borrowed(f)))
-                            .collect::<HashMap<&str, Cow<'a, Field>>>();
+                        let mut props = IndexMap::new();
                         props.insert(
                             "id",
                             Cow::Owned(Field {
@@ -62,6 +60,9 @@ pub(crate) fn build_field_lookups<'a>(src: &'a Source) -> SchemaVersionMap<'a> {
                                 loc: Loc::empty(),
                             }),
                         );
+                        for f in &n.fields {
+                            props.insert(f.name.as_str(), Cow::Borrowed(f));
+                        }
                         (n.name.1.as_str(), props)
                     })
                     .collect();
@@ -70,15 +71,7 @@ pub(crate) fn build_field_lookups<'a>(src: &'a Source) -> SchemaVersionMap<'a> {
                     .edge_schemas
                     .iter()
                     .map(|e| {
-                        let mut props: HashMap<_, _> = e
-                            .properties
-                            .as_ref()
-                            .map(|v| {
-                                v.iter()
-                                    .map(|f| (f.name.as_str(), Cow::Borrowed(f)))
-                                    .collect()
-                            })
-                            .unwrap_or_default();
+                        let mut props = IndexMap::new();
                         props.insert(
                             "id",
                             Cow::Owned(Field {
@@ -119,6 +112,12 @@ pub(crate) fn build_field_lookups<'a>(src: &'a Source) -> SchemaVersionMap<'a> {
                                 loc: Loc::empty(),
                             }),
                         );
+                        // Then insert schema fields in definition order
+                        if let Some(v) = e.properties.as_ref() {
+                            for f in v {
+                                props.insert(f.name.as_str(), Cow::Borrowed(f));
+                            }
+                        }
                         (e.name.1.as_str(), props)
                     })
                     .collect();
@@ -127,11 +126,7 @@ pub(crate) fn build_field_lookups<'a>(src: &'a Source) -> SchemaVersionMap<'a> {
                     .vector_schemas
                     .iter()
                     .map(|v| {
-                        let mut props = v
-                            .fields
-                            .iter()
-                            .map(|f| (f.name.as_str(), Cow::Borrowed(f)))
-                            .collect::<HashMap<&str, Cow<'a, Field>>>();
+                        let mut props = IndexMap::new();
                         props.insert(
                             "id",
                             Cow::Owned(Field {
@@ -172,6 +167,10 @@ pub(crate) fn build_field_lookups<'a>(src: &'a Source) -> SchemaVersionMap<'a> {
                                 loc: Loc::empty(),
                             }),
                         );
+                        // Then insert schema fields in definition order
+                        for f in &v.fields {
+                            props.insert(f.name.as_str(), Cow::Borrowed(f));
+                        }
                         (v.name.as_str(), props)
                     })
                     .collect();
@@ -474,7 +473,7 @@ const RESERVED_TYPE_NAMES: &[&str] = &[
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::helixc::parser::{HelixParser, write_to_temp_file};
+    use crate::helixc::parser::{write_to_temp_file, HelixParser};
 
     // ============================================================================
     // Duplicate Schema Definition Tests
@@ -498,11 +497,9 @@ mod tests {
         assert!(result.is_ok());
         let (diagnostics, _) = result.unwrap();
         assert!(diagnostics.iter().any(|d| d.error_code == ErrorCode::E107));
-        assert!(
-            diagnostics
-                .iter()
-                .any(|d| d.message.contains("duplicate node definition"))
-        );
+        assert!(diagnostics
+            .iter()
+            .any(|d| d.message.contains("duplicate node definition")));
     }
 
     #[test]
@@ -524,11 +521,9 @@ mod tests {
         assert!(result.is_ok());
         let (diagnostics, _) = result.unwrap();
         assert!(diagnostics.iter().any(|d| d.error_code == ErrorCode::E107));
-        assert!(
-            diagnostics
-                .iter()
-                .any(|d| d.message.contains("duplicate edge definition"))
-        );
+        assert!(diagnostics
+            .iter()
+            .any(|d| d.message.contains("duplicate edge definition")));
     }
 
     #[test]
@@ -549,11 +544,9 @@ mod tests {
         assert!(result.is_ok());
         let (diagnostics, _) = result.unwrap();
         assert!(diagnostics.iter().any(|d| d.error_code == ErrorCode::E107));
-        assert!(
-            diagnostics
-                .iter()
-                .any(|d| d.message.contains("duplicate vector definition"))
-        );
+        assert!(diagnostics
+            .iter()
+            .any(|d| d.message.contains("duplicate vector definition")));
     }
 
     // ============================================================================
@@ -578,12 +571,10 @@ mod tests {
         assert!(result.is_ok());
         let (diagnostics, _) = result.unwrap();
         assert!(diagnostics.iter().any(|d| d.error_code == ErrorCode::E106));
-        assert!(
-            diagnostics
-                .iter()
-                .any(|d| d.message.contains("undeclared node or vector type")
-                    && d.message.contains("Company"))
-        );
+        assert!(diagnostics
+            .iter()
+            .any(|d| d.message.contains("undeclared node or vector type")
+                && d.message.contains("Company")));
     }
 
     #[test]
@@ -604,12 +595,10 @@ mod tests {
         assert!(result.is_ok());
         let (diagnostics, _) = result.unwrap();
         assert!(diagnostics.iter().any(|d| d.error_code == ErrorCode::E106));
-        assert!(
-            diagnostics
-                .iter()
-                .any(|d| d.message.contains("undeclared node or vector type")
-                    && d.message.contains("Product"))
-        );
+        assert!(diagnostics
+            .iter()
+            .any(|d| d.message.contains("undeclared node or vector type")
+                && d.message.contains("Product")));
     }
 
     #[test]
@@ -652,11 +641,9 @@ mod tests {
         assert!(result.is_ok());
         let (diagnostics, _) = result.unwrap();
         // Should not error - vectors can be referenced in edges
-        assert!(
-            !diagnostics
-                .iter()
-                .any(|d| d.error_code == ErrorCode::E106 && d.message.contains("Document"))
-        );
+        assert!(!diagnostics
+            .iter()
+            .any(|d| d.error_code == ErrorCode::E106 && d.message.contains("Document")));
     }
 
     // ============================================================================
@@ -680,11 +667,9 @@ mod tests {
         assert!(result.is_ok());
         let (diagnostics, _) = result.unwrap();
         assert!(diagnostics.iter().any(|d| d.error_code == ErrorCode::E204));
-        assert!(
-            diagnostics
-                .iter()
-                .any(|d| d.message.contains("reserved field name") && d.message.contains("id"))
-        );
+        assert!(diagnostics
+            .iter()
+            .any(|d| d.message.contains("reserved field name") && d.message.contains("id")));
     }
 
     #[test]
@@ -705,11 +690,9 @@ mod tests {
         assert!(result.is_ok());
         let (diagnostics, _) = result.unwrap();
         assert!(diagnostics.iter().any(|d| d.error_code == ErrorCode::E204));
-        assert!(
-            diagnostics
-                .iter()
-                .any(|d| d.message.contains("reserved field name") && d.message.contains("label"))
-        );
+        assert!(diagnostics
+            .iter()
+            .any(|d| d.message.contains("reserved field name") && d.message.contains("label")));
     }
 
     #[test]
@@ -920,11 +903,9 @@ mod tests {
         assert!(result.is_ok());
         let (diagnostics, _) = result.unwrap();
         // Should not error - multiple edges between same types is valid
-        assert!(
-            !diagnostics
-                .iter()
-                .any(|d| d.error_code == ErrorCode::E106 || d.error_code == ErrorCode::E107)
-        );
+        assert!(!diagnostics
+            .iter()
+            .any(|d| d.error_code == ErrorCode::E106 || d.error_code == ErrorCode::E107));
     }
 
     #[test]
@@ -966,11 +947,9 @@ mod tests {
         assert!(result.is_ok());
         let (diagnostics, _) = result.unwrap();
         assert!(diagnostics.iter().any(|d| d.error_code == ErrorCode::E109));
-        assert!(
-            diagnostics
-                .iter()
-                .any(|d| d.message.contains("duplicate field") && d.message.contains("name"))
-        );
+        assert!(diagnostics
+            .iter()
+            .any(|d| d.message.contains("duplicate field") && d.message.contains("name")));
     }
 
     #[test]
@@ -991,11 +970,9 @@ mod tests {
         assert!(result.is_ok());
         let (diagnostics, _) = result.unwrap();
         assert!(diagnostics.iter().any(|d| d.error_code == ErrorCode::E109));
-        assert!(
-            diagnostics
-                .iter()
-                .any(|d| d.message.contains("duplicate field") && d.message.contains("since"))
-        );
+        assert!(diagnostics
+            .iter()
+            .any(|d| d.message.contains("duplicate field") && d.message.contains("since")));
     }
 
     #[test]
@@ -1015,11 +992,9 @@ mod tests {
         assert!(result.is_ok());
         let (diagnostics, _) = result.unwrap();
         assert!(diagnostics.iter().any(|d| d.error_code == ErrorCode::E109));
-        assert!(
-            diagnostics
-                .iter()
-                .any(|d| d.message.contains("duplicate field") && d.message.contains("content"))
-        );
+        assert!(diagnostics
+            .iter()
+            .any(|d| d.message.contains("duplicate field") && d.message.contains("content")));
     }
 
     #[test]
@@ -1109,11 +1084,9 @@ mod tests {
         assert!(result.is_ok());
         let (diagnostics, _) = result.unwrap();
         assert!(diagnostics.iter().any(|d| d.error_code == ErrorCode::E110));
-        assert!(
-            diagnostics
-                .iter()
-                .any(|d| d.message.contains("reserved type name") && d.message.contains("Node"))
-        );
+        assert!(diagnostics
+            .iter()
+            .any(|d| d.message.contains("reserved type name") && d.message.contains("Node")));
     }
 
     #[test]
@@ -1134,11 +1107,9 @@ mod tests {
         assert!(result.is_ok());
         let (diagnostics, _) = result.unwrap();
         assert!(diagnostics.iter().any(|d| d.error_code == ErrorCode::E110));
-        assert!(
-            diagnostics
-                .iter()
-                .any(|d| d.message.contains("reserved type name") && d.message.contains("Edge"))
-        );
+        assert!(diagnostics
+            .iter()
+            .any(|d| d.message.contains("reserved type name") && d.message.contains("Edge")));
     }
 
     #[test]
@@ -1158,11 +1129,9 @@ mod tests {
         assert!(result.is_ok());
         let (diagnostics, _) = result.unwrap();
         assert!(diagnostics.iter().any(|d| d.error_code == ErrorCode::E110));
-        assert!(
-            diagnostics
-                .iter()
-                .any(|d| d.message.contains("reserved type name") && d.message.contains("HVector"))
-        );
+        assert!(diagnostics
+            .iter()
+            .any(|d| d.message.contains("reserved type name") && d.message.contains("HVector")));
     }
 
     #[test]
@@ -1182,11 +1151,9 @@ mod tests {
         assert!(result.is_ok());
         let (diagnostics, _) = result.unwrap();
         assert!(diagnostics.iter().any(|d| d.error_code == ErrorCode::E110));
-        assert!(
-            diagnostics
-                .iter()
-                .any(|d| d.message.contains("reserved type name") && d.message.contains("Value"))
-        );
+        assert!(diagnostics
+            .iter()
+            .any(|d| d.message.contains("reserved type name") && d.message.contains("Value")));
     }
 
     #[test]

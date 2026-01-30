@@ -7,9 +7,9 @@ export PATH="$HOME/.cargo/bin:$PATH"
 
 # if dev profile, build with dev profile
 if [ "$1" = "dev" ]; then
-    cargo install --profile dev --force --path . --root ~/.local
+    cargo install --debug --force --path . --root ~/.local
 else
-    cargo install --release --force --path . --root ~/.local
+    cargo install --force --path . --root ~/.local
 fi
 
 if ! echo "$PATH" | grep -q "$HOME/.local/bin"; then

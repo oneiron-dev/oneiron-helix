@@ -1,9 +1,9 @@
 use crate::commands::integrations::fly::FlyManager;
 use crate::config::CloudConfig;
 use crate::docker::DockerManager;
+use crate::output::{Operation, Step};
 use crate::project::ProjectContext;
 use crate::prompts;
-use crate::utils::{print_status, print_success};
 use eyre::{OptionExt, Result};
 
 pub async fn run(instance_name: Option<String>) -> Result<()> {
@@ -41,10 +41,7 @@ pub async fn run(instance_name: Option<String>) -> Result<()> {
 }
 
 async fn stop_local_instance(project: &ProjectContext, instance_name: &str) -> Result<()> {
-    print_status(
-        "STOP",
-        &format!("Stopping local instance '{instance_name}'"),
-    );
+    let op = Operation::new("Stopping", instance_name);
 
     let docker = DockerManager::new(project);
 
@@ -52,9 +49,12 @@ async fn stop_local_instance(project: &ProjectContext, instance_name: &str) -> R
     DockerManager::check_runtime_available(docker.runtime)?;
 
     // Stop the instance
+    let mut stop_step = Step::with_messages("Stopping container", "Container stopped");
+    stop_step.start();
     docker.stop_instance(instance_name)?;
+    stop_step.done();
 
-    print_success(&format!("Instance '{instance_name}' has been stopped"));
+    op.success();
 
     Ok(())
 }
@@ -64,27 +64,18 @@ async fn stop_cloud_instance(
     instance_name: &str,
     instance_config: CloudConfig,
 ) -> Result<()> {
-    print_status(
-        "CLOUD",
-        &format!("Stopping cloud instance '{instance_name}'"),
-    );
+    let op = Operation::new("Stopping", instance_name);
 
     let _cluster_id = instance_config
         .get_cluster_id()
         .ok_or_eyre("Cloud instance '{instance_name}' must have a cluster_id")?;
 
-    // TODO: Implement cloud instance stop
-    // This would involve:
-    // 1. Connecting to the cloud API
-    // 2. Stopping the instance on the specified cluster
-    // 3. Waiting for the instance to be fully stopped
+    let mut stop_step = Step::with_messages("Stopping cloud instance", "Cloud instance stopped");
+    stop_step.start();
 
     match instance_config {
         CloudConfig::FlyIo(config) => {
-            print_status(
-                "FLY",
-                &format!("Stopping Fly.io instance '{instance_name}'"),
-            );
+            Step::verbose_substep("Stopping Fly.io instance...");
             let fly = FlyManager::new(project, config.auth_type.clone()).await?;
             fly.stop_instance(instance_name).await?;
         }
@@ -95,6 +86,9 @@ async fn stop_cloud_instance(
             unimplemented!()
         }
     }
+
+    stop_step.done();
+    op.success();
 
     Ok(())
 }

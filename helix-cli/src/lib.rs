@@ -8,6 +8,7 @@ pub mod docker;
 pub mod errors;
 pub mod github_issue;
 pub mod metrics_sender;
+pub mod output;
 pub mod port;
 pub mod project;
 pub mod prompts;

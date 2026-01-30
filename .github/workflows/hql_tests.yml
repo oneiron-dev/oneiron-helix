@@ -3,6 +3,9 @@ name: HQL Tests
 on:
   pull_request:
     branches: [main, dev]
+    paths:
+      - 'helix-macros/**'
+      - 'helix-db/**'
 
 jobs:
   hql-tests:

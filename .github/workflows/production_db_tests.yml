@@ -3,6 +3,11 @@ name: Core Database Tests In Production Mode
 on:
   pull_request:
     branches: [ main, dev ]
+    paths:
+      - 'helix-macros/**'
+      - 'helix-db/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
 
 jobs:
   test:

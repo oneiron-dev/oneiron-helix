@@ -213,8 +213,12 @@ fn test_project_context_ensure_instance_dirs_idempotent() {
 
 #[test]
 fn test_get_helix_cache_dir_creates_directory() {
-    // This test might affect the user's actual home directory,
-    // so we'll just verify it doesn't error and returns a path
+    use crate::tests::test_utils::TestContext;
+
+    // Use TestContext to isolate the test from other tests
+    let ctx = TestContext::new();
+
+    // When HELIX_CACHE_DIR is set (by TestContext), get_helix_cache_dir should use it
     let result = get_helix_cache_dir();
     assert!(result.is_ok(), "Should get helix cache directory");
 
@@ -223,9 +227,11 @@ fn test_get_helix_cache_dir_creates_directory() {
         cache_dir.exists(),
         "Cache directory should exist after calling get_helix_cache_dir"
     );
-    assert!(
-        cache_dir.ends_with(".helix"),
-        "Cache directory should end with .helix"
+
+    // With HELIX_CACHE_DIR override, the path should be the cache_dir from TestContext
+    assert_eq!(
+        cache_dir, ctx.cache_dir,
+        "Cache directory should use HELIX_CACHE_DIR when set"
     );
 }
 

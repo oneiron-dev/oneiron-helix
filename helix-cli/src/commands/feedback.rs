@@ -1,8 +1,8 @@
 //! Send feedback to the Helix team via GitHub issues.
 
 use crate::github_issue::GitHubIssueUrlBuilder;
+use crate::output;
 use crate::prompts;
-use crate::utils::{print_info, print_success};
 use eyre::{Result, eyre};
 
 /// Type of feedback being submitted
@@ -60,7 +60,7 @@ pub async fn run(message: Option<String>) -> Result<()> {
         let feedback_message = prompts::input_feedback_message()?;
 
         if !prompts::confirm("Open browser to submit feedback?")? {
-            print_info("Feedback cancelled.");
+            output::info("Feedback cancelled.");
             return Ok(());
         }
 
@@ -68,10 +68,10 @@ pub async fn run(message: Option<String>) -> Result<()> {
     };
 
     // Build and open the GitHub issue URL
-    print_info("Opening browser to submit feedback...");
+    output::info("Opening browser to submit feedback...");
     build_issue_builder(feedback_type, &feedback_message).open_in_browser()?;
 
-    print_success("Browser opened! Complete your feedback submission on GitHub.");
+    output::success("Browser opened! Complete your feedback submission on GitHub.");
     Ok(())
 }
 

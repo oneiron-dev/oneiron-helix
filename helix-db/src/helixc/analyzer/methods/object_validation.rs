@@ -24,8 +24,9 @@ use crate::{
         parser::types::*,
     },
 };
+use indexmap::IndexMap;
 use paste::paste;
-use std::{borrow::Cow, collections::HashMap};
+use std::borrow::Cow;
 
 /// Marks all Out/In steps with EdgeType::Vec in the traversal to fetch vector data
 /// This should be called when the 'data' field is accessed on a Vector type
@@ -224,7 +225,7 @@ fn validate_property_access<'a>(
     original_query: &'a Query,
     gen_traversal: &mut GeneratedTraversal,
     cur_ty: &Type,
-    fields: Option<HashMap<&'a str, Cow<'a, Field>>>,
+    fields: Option<IndexMap<&'a str, Cow<'a, Field>>>,
     fields_out: &mut Vec<ReturnValueField>,
     scope: &mut std::collections::HashMap<&'a str, crate::helixc::analyzer::utils::VariableInfo>,
     gen_query: &mut crate::helixc::generator::queries::Query,
@@ -404,10 +405,20 @@ fn validate_property_access<'a>(
                         FieldValueType::Expression(expr) => {
                             // Check if this expression contains a traversal
                             use crate::helixc::analyzer::methods::traversal_validation::validate_traversal;
-                            use crate::helixc::generator::traversal_steps::NestedTraversalInfo;
+                            use crate::helixc::generator::traversal_steps::{ComputedExpressionInfo, NestedTraversalInfo};
                             use crate::helixc::parser::types::ExpressionType;
 
-                            if let ExpressionType::Traversal(tr) = &expr.expr {
+                            if let ExpressionType::MathFunctionCall(_) = &expr.expr {
+                                // Math function call - store as computed expression
+                                gen_traversal.computed_expressions.insert(
+                                    field_addition.key.clone(),
+                                    ComputedExpressionInfo {
+                                        field_name: field_addition.key.clone(),
+                                        expression: Box::new(expr.clone()),
+                                    },
+                                );
+                                gen_traversal.object_fields.push(field_addition.key.clone());
+                            } else if let ExpressionType::Traversal(tr) = &expr.expr {
                                 // Nested traversal within expression - validate it
                                 let mut nested_gen_traversal =
                                     crate::helixc::generator::traversal_steps::Traversal::default();
@@ -457,12 +468,35 @@ fn validate_property_access<'a>(
                                 // Other expression types (identifiers, literals, etc.)
                                 gen_traversal.object_fields.push(field_addition.key.clone());
 
-                                // If this is an identifier expression, track the mapping
-                                // e.g., "post: content" where content is parsed as Expression(Identifier("content"))
+                                // If this is an identifier expression, check if it's a scope variable
+                                // (e.g., closure parameter) vs a schema property
                                 if let ExpressionType::Identifier(id) = &expr.expr {
-                                    gen_traversal
-                                        .field_name_mappings
-                                        .insert(field_addition.key.clone(), id.clone());
+                                    if let Some(var_info) = scope.get(id.as_str()) {
+                                        // This is a scope variable (e.g., closure param `u`)
+                                        // Create a nested traversal that represents the full variable
+                                        use crate::helixc::generator::traversal_steps::NestedTraversalInfo;
+                                        let source_var = var_info
+                                            .source_var
+                                            .clone()
+                                            .unwrap_or_else(|| id.clone());
+                                        let nested_info = NestedTraversalInfo {
+                                            traversal: Box::new(crate::helixc::generator::traversal_steps::Traversal::default()),
+                                            return_type: Some(var_info.ty.clone()),
+                                            field_name: field_addition.key.clone(),
+                                            parsed_traversal: None,
+                                            closure_param_name: Some(id.clone()),
+                                            closure_source_var: Some(source_var),
+                                            own_closure_param: None,
+                                        };
+                                        gen_traversal
+                                            .nested_traversals
+                                            .insert(field_addition.key.clone(), nested_info);
+                                    } else {
+                                        // Not a scope variable - treat as schema property mapping
+                                        gen_traversal
+                                            .field_name_mappings
+                                            .insert(field_addition.key.clone(), id.clone());
+                                    }
                                 }
                             }
                         }

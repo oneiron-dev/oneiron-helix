@@ -175,8 +175,18 @@ impl HelixParser {
                     .push(parser.parse_query_def(pair, file.name.clone())?);
             }
 
-            // parse all schemas first then parse queries using self
-            source.schema.extend(parser.source.schema);
+            // Merge schemas by version - combine node/edge/vector schemas instead of replacing
+            for (version, new_schema) in parser.source.schema {
+                source
+                    .schema
+                    .entry(version)
+                    .and_modify(|existing| {
+                        existing.node_schemas.extend(new_schema.node_schemas.clone());
+                        existing.edge_schemas.extend(new_schema.edge_schemas.clone());
+                        existing.vector_schemas.extend(new_schema.vector_schemas.clone());
+                    })
+                    .or_insert(new_schema);
+            }
             source.queries.extend(parser.source.queries);
             source.migrations.extend(parser.source.migrations);
             Ok(())

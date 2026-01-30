@@ -49,6 +49,7 @@ impl<'db, 'arena, 'txn, I: Iterator<Item = Result<TraversalValue<'arena>, GraphE
             .filter_map(move |item| {
                 if let Ok((id, value)) = item {
 
+
                     // get label via bytes directly
                     assert!(
                         value.len() >= LMDB_STRING_HEADER_LENGTH,
@@ -62,9 +63,6 @@ impl<'db, 'arena, 'txn, I: Iterator<Item = Result<TraversalValue<'arena>, GraphE
                     );
                     let label_in_lmdb = &value[LMDB_STRING_HEADER_LENGTH
                         ..LMDB_STRING_HEADER_LENGTH + length_of_label_in_lmdb];
-
-
-                    // get deleted via bytes directly
 
                     // skip single byte for version
                     let version_index = length_of_label_in_lmdb + LMDB_STRING_HEADER_LENGTH;

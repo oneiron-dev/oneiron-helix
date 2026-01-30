@@ -278,6 +278,13 @@ pub(super) struct VariableInfo {
     pub reference_count: usize,      // How many times this variable is referenced
     pub source_var: Option<String>,  // For closure parameters, the actual variable they refer to
     pub struct_name: Option<String>, // Track generated struct name for nested object types in FOR loops
+    // Projection metadata from the original traversal binding
+    pub has_object_step: bool,
+    pub object_fields: Vec<String>,
+    pub field_name_mappings: std::collections::HashMap<String, String>,
+    pub excluded_fields: Vec<String>,
+    pub has_spread: bool,
+    pub nested_traversals: std::collections::HashMap<String, crate::helixc::generator::traversal_steps::NestedTraversalInfo>,
 }
 
 impl VariableInfo {
@@ -288,6 +295,12 @@ impl VariableInfo {
             reference_count: 0,
             source_var: None,
             struct_name: None,
+            has_object_step: false,
+            object_fields: Vec::new(),
+            field_name_mappings: std::collections::HashMap::new(),
+            excluded_fields: Vec::new(),
+            has_spread: false,
+            nested_traversals: std::collections::HashMap::new(),
         }
     }
 
@@ -298,6 +311,12 @@ impl VariableInfo {
             reference_count: 0,
             source_var: Some(source_var),
             struct_name: None,
+            has_object_step: false,
+            object_fields: Vec::new(),
+            field_name_mappings: std::collections::HashMap::new(),
+            excluded_fields: Vec::new(),
+            has_spread: false,
+            nested_traversals: std::collections::HashMap::new(),
         }
     }
 
@@ -308,7 +327,23 @@ impl VariableInfo {
             reference_count: 0,
             source_var: None,
             struct_name: Some(struct_name),
+            has_object_step: false,
+            object_fields: Vec::new(),
+            field_name_mappings: std::collections::HashMap::new(),
+            excluded_fields: Vec::new(),
+            has_spread: false,
+            nested_traversals: std::collections::HashMap::new(),
         }
+    }
+
+    /// Store projection metadata from a GeneratedTraversal
+    pub fn store_projection_metadata(&mut self, traversal: &crate::helixc::generator::traversal_steps::Traversal) {
+        self.has_object_step = traversal.has_object_step;
+        self.object_fields = traversal.object_fields.clone();
+        self.field_name_mappings = traversal.field_name_mappings.clone();
+        self.excluded_fields = traversal.excluded_fields.clone();
+        self.has_spread = traversal.has_spread;
+        self.nested_traversals = traversal.nested_traversals.clone();
     }
 
     pub fn increment_reference(&mut self) {

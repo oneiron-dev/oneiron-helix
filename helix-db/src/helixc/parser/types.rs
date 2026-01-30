@@ -531,12 +531,12 @@ impl MathFunction {
             | MathFunction::Asin
             | MathFunction::Acos
             | MathFunction::Atan
-            | MathFunction::Min
-            | MathFunction::Max
             | MathFunction::Sum
             | MathFunction::Avg
             | MathFunction::Count => 1,
             MathFunction::Add
+            | MathFunction::Min
+            | MathFunction::Max
             | MathFunction::Sub
             | MathFunction::Mul
             | MathFunction::Div

@@ -11,6 +11,7 @@ use crate::{
         parser::{location::Loc, types::*},
     },
 };
+use indexmap::IndexMap;
 use paste::paste;
 use std::{borrow::Cow, collections::HashMap};
 
@@ -29,7 +30,7 @@ use std::{borrow::Cow, collections::HashMap};
 pub(crate) fn validate_exclude_fields<'a>(
     ctx: &mut Ctx<'a>,
     ex: &Exclude,
-    field_set: &HashMap<&str, Cow<'a, Field>>,
+    field_set: &IndexMap<&str, Cow<'a, Field>>,
     excluded: &HashMap<&str, Loc>,
     original_query: &'a Query,
     type_name: &str,
