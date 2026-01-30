@@ -8,5 +8,6 @@ pub mod edge_weights_e2e_tests;
 pub mod hnsw_tests;
 pub mod hybrid_search_tests;
 pub mod ppr_cache_tests;
+pub mod ppr_large_scale_tests;
 pub mod signal_boost_e2e_tests;
 pub mod storage_tests;

@@ -110,9 +110,29 @@
 | Signal Boosts | 14 | 12 | 26 |
 | SearchHybrid | 0 | 19 | 19 |
 | Stress Tests | 0 | 5 | 5 |
-| **Total** | **66** | **74** | **140** |
+| Large-Scale Graph Tests | 0 | 12 | 12 |
+| **Total** | **66** | **86** | **152** |
 
 All tests include NetworkX-validated ground truth verification where applicable.
+
+### Large-Scale Graph Test Coverage
+
+The `ppr_large_scale_tests.rs` module tests PPR on programmatically generated graph topologies:
+
+| Graph Type | Nodes | Edges | Test Focus |
+|------------|-------|-------|------------|
+| Barabasi-Albert | 500 | 1,494 | Hub node score accumulation |
+| Watts-Strogatz | 200 | 400 | Small-world clustering effects |
+| Oneiron Hierarchy | 800 | 1,522 | All 13 edge types, hierarchical structure |
+| Clustered Graph | 100 | 451 | Cross-cluster propagation (8.69x ratio) |
+| Citation DAG | 500 | 2,657 | Directed acyclic traversal |
+| Performance (1K) | 1,000 | 3,990 | ~100ms execution time |
+| Performance (5K edges) | 1,500 | 5,990 | Scalability verification |
+| Weighted BA | 300 | 894 | Random edge type distribution |
+| Custom Weights | 500 | 1,494 | Weight override verification |
+| Deep Traversal | 300 | 900 | Depth=5 stability |
+| Many Seeds | 500 | 1,494 | 50-seed handling |
+| Small Universe | 1,000 | 3,990 | Candidate-set gating |
 
 ---
 
@@ -135,6 +155,7 @@ All features from ONEIRON-ARCH-004 and ONEIRON-ARCH-014 have been implemented.
 | Source Steps | `helix-db/src/helixc/generator/source_steps.rs` |
 | Grammar | `helix-db/src/grammar.pest` |
 | PPR Tests | `helix-db/src/helix_engine/tests/traversal_tests/ppr_tests.rs` |
+| PPR Large-Scale Tests | `helix-db/src/helix_engine/tests/ppr_large_scale_tests.rs` |
 | Edge Weights E2E | `helix-db/src/helix_engine/tests/edge_weights_e2e_tests.rs` |
 | Signal Boost E2E | `helix-db/src/helix_engine/tests/signal_boost_e2e_tests.rs` |
 | Hybrid Tests | `helix-db/src/helix_engine/tests/hybrid_search_tests.rs` |
@@ -144,9 +165,10 @@ All features from ONEIRON-ARCH-004 and ONEIRON-ARCH-014 have been implemented.
 ## Recent Commits
 
 ```
-[pending] Implement PPR warm cache Phase 2 warmup jobs
+[pending] Add large-scale PPR tests with graph topologies (12 E2E tests)
+ae54afa8 Merge upstream/main: sync with HelixDB/helix-db (44 commits)
+767e19b3 Implement PPR warm cache Phase 2: background warmup jobs
 82526a31 Implement ranking signal boosts with E2E tests
 04eb3751 Implement custom edge weights, PPR warm cache, claim filtering
 a56893b3 Fix stress test crashes caused by LMDB reader slot issues
-abcbe2b1 Simplify PPR and source_steps code
 ```
