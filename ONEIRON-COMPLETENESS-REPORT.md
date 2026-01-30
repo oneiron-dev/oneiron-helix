@@ -52,17 +52,22 @@
 - Syntax: `PPR<Type>(seeds: ids, universe: ids, depth: 2, damping: 0.85, limit: 50)`
 - Calls `ppr_with_storage()` with proper storage/txn/arena access
 
-### PPR Warm Cache (Phase 1 Complete)
-- **Location:** `helix-db/src/helix_engine/graph/ppr_cache.rs`
-- **Features:**
+### PPR Warm Cache (Complete - Phase 1 + 2)
+- **Phase 1 Location:** `helix-db/src/helix_engine/graph/ppr_cache.rs`
+- **Phase 2 Location:** `helix-db/src/helix_engine/graph/ppr_warmup.rs`
+- **Phase 1 Features:**
   - `PPRCacheEntry` storage structure with LMDB backend
   - Cache key format: `ppr:{vault_id}:{entity_type}:{entity_id}:{depth}`
   - `ppr_with_cache()` for query-time cache lookup with live fallback
   - `populate_cache_entry()` for cache warming
   - Cache invalidation: `mark_stale()`, `invalidate_for_entity()`
   - `PPRCacheMetrics` with hits/misses/stale_hits tracking
-- **Remaining for Phase 2:**
-  - Background `ppr_warmup` job scheduler
+- **Phase 2 Features:**
+  - `PPRWarmupJobConfig` with configurable top_k, entity_types, recency_window, depth
+  - `run_warmup_job()` to execute warmup with time budget
+  - `select_entities_to_warm()` with recency-weighted scoring
+  - `check_ttl_expired()` with tiered TTL (24h/72h/168h based on activity)
+  - `refresh_stale_entries()` for batch stale entry refresh
 
 ### Claim Filtering (Complete)
 - **Location:** `helix-db/src/helix_engine/graph/claim_filter.rs`
@@ -99,24 +104,21 @@
 |---------|------------|-----------|-------|
 | PPR Algorithm | 10 | 19 | 29 |
 | PPR Warm Cache | 8 | 7 | 15 |
+| PPR Warmup Jobs | 7 | 0 | 7 |
 | Claim Filtering | 13 | 5 | 18 |
 | Custom Edge Weights | 14 | 7 | 21 |
 | Signal Boosts | 14 | 12 | 26 |
 | SearchHybrid | 0 | 19 | 19 |
 | Stress Tests | 0 | 5 | 5 |
-| **Total** | **59** | **74** | **133** |
+| **Total** | **66** | **74** | **140** |
 
 All tests include NetworkX-validated ground truth verification where applicable.
 
 ---
 
-## Not Implemented ❌
+## All Features Complete ✅
 
-### PPR Warm Cache Phase 2
-- **Priority:** Low (Phase 1 complete)
-- **What's needed:**
-  - Background scheduler for nightly `ppr_warmup` job
-  - Automatic cache warming on startup
+All features from ONEIRON-ARCH-004 and ONEIRON-ARCH-014 have been implemented.
 
 ---
 
@@ -126,6 +128,7 @@ All tests include NetworkX-validated ground truth verification where applicable.
 |-----------|------|
 | PPR Core | `helix-db/src/helix_engine/graph/ppr.rs` |
 | PPR Cache | `helix-db/src/helix_engine/graph/ppr_cache.rs` |
+| PPR Warmup | `helix-db/src/helix_engine/graph/ppr_warmup.rs` |
 | Claim Filter | `helix-db/src/helix_engine/graph/claim_filter.rs` |
 | Signal Boosts | `helix-db/src/helix_engine/reranker/fusion/signal_boost.rs` |
 | RRF Reranker | `helix-db/src/helix_engine/reranker/fusion/rrf.rs` |
@@ -141,9 +144,9 @@ All tests include NetworkX-validated ground truth verification where applicable.
 ## Recent Commits
 
 ```
-[pending] Implement ranking signal boosts with E2E tests
+[pending] Implement PPR warm cache Phase 2 warmup jobs
+82526a31 Implement ranking signal boosts with E2E tests
 04eb3751 Implement custom edge weights, PPR warm cache, claim filtering
 a56893b3 Fix stress test crashes caused by LMDB reader slot issues
 abcbe2b1 Simplify PPR and source_steps code
-b0c8d022 Change PPR default to normalize=true
 ```
