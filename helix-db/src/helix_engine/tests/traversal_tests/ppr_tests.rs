@@ -962,6 +962,23 @@ fn test_ppr_limit_results() {
     assert_eq!(result.len(), 3, "Result should be limited to 3 entries");
 }
 
+/// Comprehensive PPR test validated against NetworkX's PageRank implementation.
+///
+/// Verification Summary:
+/// - Relative node ordering matches NetworkX exactly:
+///   NetworkX: alice > session1 > turn1 > claim1 > bob > turn2 > topic1 > claim2
+///   Our implementation: same ordering
+///
+/// Score Differences:
+/// - Absolute scores differ due to normalization approach:
+///   NetworkX normalizes to sum = 1.0
+///   Our implementation accumulates without normalization
+///
+/// Key Behaviors Validated:
+/// - opposes (weight=0) blocks propagation entirely to opposed nodes
+/// - supersedes (weight=0.3) significantly reduces score for downstream nodes
+/// - part_of edges limited to 2 hops (nodes 3+ hops away get ~0 score)
+/// - Disconnected subgraphs receive ~0 score despite being in universe
 #[test]
 fn test_ppr_oneiron_full_graph() {
     let (_temp_dir, storage) = setup_test_db();
