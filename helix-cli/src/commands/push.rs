@@ -174,7 +174,7 @@ async fn push_local_instance(
             ("Local URL", &format!("http://localhost:{actual_port}")),
             (
                 "Container",
-                &format!("helix_{project_name}_{instance_name}"),
+                &format!("helix-{project_name}-{instance_name}"),
             ),
             (
                 "Data volume",

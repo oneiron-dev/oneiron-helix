@@ -6,7 +6,7 @@ use crate::{
     },
 };
 use core::fmt;
-use heed3::{Error as HeedError, MdbError};
+use heed3::Error as HeedError;
 use serde::{Deserialize, Serialize};
 use sonic_rs::Error as SonicError;
 use std::{fmt::Display, net::AddrParseError, str::Utf8Error, string::FromUtf8Error};
@@ -20,6 +20,7 @@ pub enum GraphError {
     TraversalError(String),
     ConversionError(String),
     DecodeError(String),
+    EncodeError(String),
     EdgeNotFound,
     NodeNotFound,
     LabelNotFound,
@@ -56,6 +57,7 @@ impl fmt::Display for GraphError {
             GraphError::StorageError(msg) => write!(f, "Storage error: {msg}"),
             GraphError::ConversionError(msg) => write!(f, "Conversion error: {msg}"),
             GraphError::DecodeError(msg) => write!(f, "Decode error: {msg}"),
+            GraphError::EncodeError(msg) => write!(f, "Encode error: {msg}"),
             GraphError::EdgeNotFound => write!(f, "Edge not found"),
             GraphError::NodeNotFound => write!(f, "Node not found"),
             GraphError::LabelNotFound => write!(f, "Label not found"),
@@ -85,8 +87,12 @@ impl fmt::Display for GraphError {
 impl From<HeedError> for GraphError {
     fn from(error: HeedError) -> Self {
         match error {
-            HeedError::Mdb(MdbError::KeyExist) => GraphError::DuplicateKey(error.to_string()),
-            _ => GraphError::StorageError(error.to_string()),
+            // HeedError::Mdb(MdbError::KeyExist) => GraphError::DuplicateKey(error.to_string()),
+            HeedError::Decoding(e) => GraphError::DecodeError(e.to_string()),
+            HeedError::Encoding(e) => GraphError::EncodeError(e.to_string()),
+            HeedError::Io(e) => GraphError::Io(e),
+            HeedError::Mdb(e) => GraphError::StorageError(e.to_string()),
+            HeedError::EnvAlreadyOpened => GraphError::StorageError("Env already open".to_string()),
         }
     }
 }

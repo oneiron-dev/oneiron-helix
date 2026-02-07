@@ -1262,6 +1262,7 @@ pub(crate) fn validate_traversal<'a>(
                         ) {
                             (Type::Scalar(ft), _) => ft.clone(),
                             (Type::Boolean, _) => FieldType::Boolean,
+                            (Type::Count, _) => FieldType::I64,
                             (field_type, _) => {
                                 generate_error!(
                                     ctx,

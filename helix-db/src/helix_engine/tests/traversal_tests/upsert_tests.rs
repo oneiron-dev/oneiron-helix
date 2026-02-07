@@ -11,7 +11,14 @@ use crate::{
         traversal_core::{
             ops::{
                 g::G,
-                source::{add_e::AddEAdapter, add_n::AddNAdapter},
+                in_::in_::InAdapter,
+                in_::in_e::InEdgesAdapter,
+                out::out::OutAdapter,
+                out::out_e::OutEdgesAdapter,
+                source::{
+                    add_e::AddEAdapter, add_n::AddNAdapter, e_from_id::EFromIdAdapter,
+                    n_from_id::NFromIdAdapter,
+                },
                 util::upsert::UpsertAdapter,
                 vectors::{insert::InsertVAdapter, search::SearchVAdapter},
             },
@@ -440,7 +447,11 @@ fn test_upsert_e_updates_existing_edge_with_properties() {
 }
 
 #[test]
-fn test_upsert_e_ignores_non_edge_values() {
+fn test_upsert_e_ignores_iterator_content() {
+    // After fix for issue #850: upsert_e now looks up edges by from_node/to_node/label
+    // directly in the database, ignoring the source iterator content entirely.
+    // This test verifies that even if a Node is in the iterator, the upsert
+    // still correctly creates an edge between the specified nodes.
     let (_temp_dir, storage) = setup_test_db();
     let arena = Bump::new();
     let mut txn = storage.graph_env.write_txn().unwrap();
@@ -456,7 +467,8 @@ fn test_upsert_e_ignores_non_edge_values() {
         .unwrap()[0]
         .id();
 
-    // Upsert with node in iterator (should be ignored)
+    // Upsert with node in iterator - iterator content is now ignored,
+    // edge is created based on from_node/to_node parameters
     let result = G::new_mut_from_iter(&storage, &mut txn, std::iter::once(node1.clone()), &arena)
         .upsert_e(
             "connects",
@@ -467,13 +479,15 @@ fn test_upsert_e_ignores_non_edge_values() {
         .collect::<Result<Vec<_>, _>>()
         .unwrap();
 
-    // Should return Empty since node was ignored
+    // Should create edge since no edge exists between node1 and node2
     assert_eq!(result.len(), 1);
-    if let TraversalValue::Empty = &result[0] {
-        // This is the correct behavior - non-matching types are ignored
-        // and return TraversalValue::Empty
+    if let TraversalValue::Edge(edge) = &result[0] {
+        assert_eq!(edge.from_node, node1.id());
+        assert_eq!(edge.to_node, node2);
+        assert_eq!(edge.label, "connects");
+        assert_eq!(edge.get_property("type").unwrap(), &Value::from("friend"));
     } else {
-        panic!("Expected Empty, got: {:?}", result[0]);
+        panic!("Expected Edge, got: {:?}", result[0]);
     }
     txn.commit().unwrap();
 }
@@ -1245,4 +1259,907 @@ fn test_upsert_n_sequential_property_updates() {
     }
 
     txn.commit().unwrap();
+}
+
+// ============================================================================
+// Regression Tests - Issue #850
+// ============================================================================
+
+#[test]
+fn test_upsert_e_creates_edge_between_correct_nodes_issue_850() {
+    // Regression test for issue #850: UpsertE was ignoring From()/To() parameters
+    // and instead using the first edge from the source iterator.
+    let (_temp_dir, storage) = setup_test_db();
+    let arena = Bump::new();
+    let mut txn = storage.graph_env.write_txn().unwrap();
+
+    // Create 4 nodes
+    let node_a = G::new_mut(&storage, &arena, &mut txn)
+        .add_n("person", None, None)
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap()[0]
+        .id();
+    let node_b = G::new_mut(&storage, &arena, &mut txn)
+        .add_n("person", None, None)
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap()[0]
+        .id();
+    let node_c = G::new_mut(&storage, &arena, &mut txn)
+        .add_n("person", None, None)
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap()[0]
+        .id();
+    let node_d = G::new_mut(&storage, &arena, &mut txn)
+        .add_n("person", None, None)
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap()[0]
+        .id();
+
+    // Create existing edge A -> B
+    let _existing = G::new_mut(&storage, &arena, &mut txn)
+        .add_edge("knows", None, node_a, node_b, false, false)
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
+
+    // UpsertE targeting C -> D (should create new edge, not update A->B)
+    let result = G::new_mut_from_iter(
+        &storage,
+        &mut txn,
+        std::iter::empty::<TraversalValue>(),
+        &arena,
+    )
+    .upsert_e("knows", node_c, node_d, &[("since", Value::from(2024))])
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
+
+    assert_eq!(result.len(), 1);
+    if let TraversalValue::Edge(edge) = &result[0] {
+        // Key assertion: edge connects C->D, not A->B
+        assert_eq!(edge.from_node, node_c);
+        assert_eq!(edge.to_node, node_d);
+        assert_eq!(edge.get_property("since").unwrap(), &Value::from(2024));
+    } else {
+        panic!("Expected edge");
+    }
+    txn.commit().unwrap();
+}
+
+#[test]
+fn test_upsert_e_updates_correct_edge_when_multiple_edges_exist_issue_850() {
+    // Another regression test for issue #850: When multiple edges exist,
+    // UpsertE should find and update the correct edge based on from_node/to_node.
+    let (_temp_dir, storage) = setup_test_db();
+    let arena = Bump::new();
+    let mut txn = storage.graph_env.write_txn().unwrap();
+
+    // Create nodes
+    let node_a = G::new_mut(&storage, &arena, &mut txn)
+        .add_n("person", None, None)
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap()[0]
+        .id();
+    let node_b = G::new_mut(&storage, &arena, &mut txn)
+        .add_n("person", None, None)
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap()[0]
+        .id();
+    let node_c = G::new_mut(&storage, &arena, &mut txn)
+        .add_n("person", None, None)
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap()[0]
+        .id();
+
+    // Create edge A -> B with initial property
+    let edge_ab = G::new_mut(&storage, &arena, &mut txn)
+        .add_edge(
+            "knows",
+            props_option(&arena, props!("since" => 2020)),
+            node_a,
+            node_b,
+            false,
+            false,
+        )
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
+    let edge_ab_id = if let TraversalValue::Edge(e) = &edge_ab[0] {
+        e.id
+    } else {
+        panic!("Expected edge");
+    };
+
+    // Create edge A -> C with initial property
+    let edge_ac = G::new_mut(&storage, &arena, &mut txn)
+        .add_edge(
+            "knows",
+            props_option(&arena, props!("since" => 2021)),
+            node_a,
+            node_c,
+            false,
+            false,
+        )
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
+    let edge_ac_id = if let TraversalValue::Edge(e) = &edge_ac[0] {
+        e.id
+    } else {
+        panic!("Expected edge");
+    };
+
+    // UpsertE targeting A -> C should update edge_ac, NOT edge_ab
+    let result = G::new_mut_from_iter(
+        &storage,
+        &mut txn,
+        std::iter::empty::<TraversalValue>(),
+        &arena,
+    )
+    .upsert_e(
+        "knows",
+        node_a,
+        node_c,
+        &[("since", Value::from(2025)), ("updated", Value::from(true))],
+    )
+    .collect::<Result<Vec<_>, _>>()
+    .unwrap();
+
+    assert_eq!(result.len(), 1);
+    if let TraversalValue::Edge(edge) = &result[0] {
+        // Key assertions: should update edge_ac, not edge_ab
+        assert_eq!(edge.id, edge_ac_id, "Should update the correct edge (A->C)");
+        assert_ne!(edge.id, edge_ab_id, "Should NOT update edge A->B");
+        assert_eq!(edge.from_node, node_a);
+        assert_eq!(edge.to_node, node_c);
+        assert_eq!(edge.get_property("since").unwrap(), &Value::from(2025));
+        assert_eq!(edge.get_property("updated").unwrap(), &Value::from(true));
+    } else {
+        panic!("Expected edge");
+    }
+    txn.commit().unwrap();
+}
+
+// ============================================================================
+// Edge Adjacency & Persistence Tests
+// ============================================================================
+
+#[test]
+fn test_upsert_e_new_edge_adjacency_via_out_e_in_e() {
+    let (_temp_dir, storage) = setup_test_db();
+    let arena = Bump::new();
+    let mut txn = storage.graph_env.write_txn().unwrap();
+
+    let source_id = G::new_mut(&storage, &arena, &mut txn)
+        .add_n("person", None, None)
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap()[0]
+        .id();
+    let target_id = G::new_mut(&storage, &arena, &mut txn)
+        .add_n("person", None, None)
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap()[0]
+        .id();
+
+    let upserted = G::new_mut_from_iter(
+        &storage,
+        &mut txn,
+        std::iter::empty::<TraversalValue>(),
+        &arena,
+    )
+    .upsert_e(
+        "knows",
+        source_id,
+        target_id,
+        &[("since", Value::from(2024))],
+    )
+    .collect::<Result<Vec<_>, _>>()
+    .unwrap();
+
+    let edge_id = upserted[0].id();
+    txn.commit().unwrap();
+
+    // Fresh arena + read txn
+    let arena = Bump::new();
+    let txn = storage.graph_env.read_txn().unwrap();
+
+    // out_e from source should find the edge
+    let out_edges = G::new(&storage, &txn, &arena)
+        .n_from_id(&source_id)
+        .out_e("knows")
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
+    assert_eq!(out_edges.len(), 1);
+    assert_eq!(out_edges[0].id(), edge_id);
+
+    // in_e from target should find the edge
+    let in_edges = G::new(&storage, &txn, &arena)
+        .n_from_id(&target_id)
+        .in_e("knows")
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
+    assert_eq!(in_edges.len(), 1);
+    assert_eq!(in_edges[0].id(), edge_id);
+}
+
+#[test]
+fn test_upsert_e_update_preserves_adjacency() {
+    let (_temp_dir, storage) = setup_test_db();
+    let arena = Bump::new();
+    let mut txn = storage.graph_env.write_txn().unwrap();
+
+    let source_id = G::new_mut(&storage, &arena, &mut txn)
+        .add_n("person", None, None)
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap()[0]
+        .id();
+    let target_id = G::new_mut(&storage, &arena, &mut txn)
+        .add_n("person", None, None)
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap()[0]
+        .id();
+
+    // Create edge via add_edge
+    let edge = G::new_mut(&storage, &arena, &mut txn)
+        .add_edge(
+            "knows",
+            props_option(&arena, props!("since" => 2020)),
+            source_id,
+            target_id,
+            false,
+            false,
+        )
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
+    let edge_id = edge[0].id();
+
+    // Upsert to update props on the same (from, to, label)
+    G::new_mut_from_iter(&storage, &mut txn, edge.into_iter(), &arena)
+        .upsert_e(
+            "knows",
+            source_id,
+            target_id,
+            &[("since", Value::from(2025)), ("close", Value::from(true))],
+        )
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
+
+    txn.commit().unwrap();
+
+    // Fresh arena + read txn: adjacency still works AND updated props visible
+    let arena = Bump::new();
+    let txn = storage.graph_env.read_txn().unwrap();
+
+    let out_edges = G::new(&storage, &txn, &arena)
+        .n_from_id(&source_id)
+        .out_e("knows")
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
+    assert_eq!(out_edges.len(), 1);
+    assert_eq!(out_edges[0].id(), edge_id);
+    if let TraversalValue::Edge(e) = &out_edges[0] {
+        assert_eq!(e.get_property("since").unwrap(), &Value::from(2025));
+        assert_eq!(e.get_property("close").unwrap(), &Value::from(true));
+    } else {
+        panic!("Expected edge");
+    }
+
+    let in_edges = G::new(&storage, &txn, &arena)
+        .n_from_id(&target_id)
+        .in_e("knows")
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
+    assert_eq!(in_edges.len(), 1);
+    assert_eq!(in_edges[0].id(), edge_id);
+}
+
+#[test]
+fn test_upsert_e_different_endpoints_creates_new_edge_keeps_old() {
+    let (_temp_dir, storage) = setup_test_db();
+    let arena = Bump::new();
+    let mut txn = storage.graph_env.write_txn().unwrap();
+
+    let node_a = G::new_mut(&storage, &arena, &mut txn)
+        .add_n("person", None, None)
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap()[0]
+        .id();
+    let node_b = G::new_mut(&storage, &arena, &mut txn)
+        .add_n("person", None, None)
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap()[0]
+        .id();
+    let node_c = G::new_mut(&storage, &arena, &mut txn)
+        .add_n("person", None, None)
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap()[0]
+        .id();
+
+    // Create A->B via upsert
+    G::new_mut_from_iter(
+        &storage,
+        &mut txn,
+        std::iter::empty::<TraversalValue>(),
+        &arena,
+    )
+    .upsert_e("knows", node_a, node_b, &[("rel", Value::from("old"))])
+    .collect::<Result<Vec<_>, _>>()
+    .unwrap();
+
+    // Upsert A->C (different endpoint — creates new edge)
+    G::new_mut_from_iter(
+        &storage,
+        &mut txn,
+        std::iter::empty::<TraversalValue>(),
+        &arena,
+    )
+    .upsert_e("knows", node_a, node_c, &[("rel", Value::from("new"))])
+    .collect::<Result<Vec<_>, _>>()
+    .unwrap();
+
+    txn.commit().unwrap();
+
+    let arena = Bump::new();
+    let txn = storage.graph_env.read_txn().unwrap();
+
+    // A should have 2 outgoing "knows" edges
+    let out_edges = G::new(&storage, &txn, &arena)
+        .n_from_id(&node_a)
+        .out_e("knows")
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
+    assert_eq!(out_edges.len(), 2);
+
+    // B should have 1 incoming "knows" edge
+    let in_b = G::new(&storage, &txn, &arena)
+        .n_from_id(&node_b)
+        .in_e("knows")
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
+    assert_eq!(in_b.len(), 1);
+
+    // C should have 1 incoming "knows" edge
+    let in_c = G::new(&storage, &txn, &arena)
+        .n_from_id(&node_c)
+        .in_e("knows")
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
+    assert_eq!(in_c.len(), 1);
+
+    // Old edge to B is untouched
+    if let TraversalValue::Edge(e) = &in_b[0] {
+        assert_eq!(e.get_property("rel").unwrap(), &Value::from("old"));
+    } else {
+        panic!("Expected edge");
+    }
+}
+
+#[test]
+fn test_upsert_e_idempotent_same_triple_no_duplicate() {
+    let (_temp_dir, storage) = setup_test_db();
+    let arena = Bump::new();
+    let mut txn = storage.graph_env.write_txn().unwrap();
+
+    let node_a = G::new_mut(&storage, &arena, &mut txn)
+        .add_n("person", None, None)
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap()[0]
+        .id();
+    let node_b = G::new_mut(&storage, &arena, &mut txn)
+        .add_n("person", None, None)
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap()[0]
+        .id();
+
+    // First upsert
+    let first = G::new_mut_from_iter(
+        &storage,
+        &mut txn,
+        std::iter::empty::<TraversalValue>(),
+        &arena,
+    )
+    .upsert_e(
+        "knows",
+        node_a,
+        node_b,
+        &[("version", Value::from(1))],
+    )
+    .collect::<Result<Vec<_>, _>>()
+    .unwrap();
+    let first_id = first[0].id();
+
+    // Second upsert — same (from, to, label)
+    let second = G::new_mut_from_iter(
+        &storage,
+        &mut txn,
+        std::iter::empty::<TraversalValue>(),
+        &arena,
+    )
+    .upsert_e(
+        "knows",
+        node_a,
+        node_b,
+        &[("version", Value::from(2))],
+    )
+    .collect::<Result<Vec<_>, _>>()
+    .unwrap();
+    let second_id = second[0].id();
+
+    // Same edge ID
+    assert_eq!(first_id, second_id);
+
+    txn.commit().unwrap();
+
+    let arena = Bump::new();
+    let txn = storage.graph_env.read_txn().unwrap();
+
+    // Only 1 edge in adjacency
+    let out_edges = G::new(&storage, &txn, &arena)
+        .n_from_id(&node_a)
+        .out_e("knows")
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
+    assert_eq!(out_edges.len(), 1);
+
+    // Second props win
+    if let TraversalValue::Edge(e) = &out_edges[0] {
+        assert_eq!(e.get_property("version").unwrap(), &Value::from(2));
+    } else {
+        panic!("Expected edge");
+    }
+}
+
+#[test]
+fn test_upsert_e_multiple_labels_same_node_pair() {
+    let (_temp_dir, storage) = setup_test_db();
+    let arena = Bump::new();
+    let mut txn = storage.graph_env.write_txn().unwrap();
+
+    let node_a = G::new_mut(&storage, &arena, &mut txn)
+        .add_n("person", None, None)
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap()[0]
+        .id();
+    let node_b = G::new_mut(&storage, &arena, &mut txn)
+        .add_n("person", None, None)
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap()[0]
+        .id();
+
+    // Upsert "knows"
+    G::new_mut_from_iter(
+        &storage,
+        &mut txn,
+        std::iter::empty::<TraversalValue>(),
+        &arena,
+    )
+    .upsert_e("knows", node_a, node_b, &[("since", Value::from(2020))])
+    .collect::<Result<Vec<_>, _>>()
+    .unwrap();
+
+    // Upsert "likes" — same nodes, different label
+    G::new_mut_from_iter(
+        &storage,
+        &mut txn,
+        std::iter::empty::<TraversalValue>(),
+        &arena,
+    )
+    .upsert_e("likes", node_a, node_b, &[("rating", Value::from(5))])
+    .collect::<Result<Vec<_>, _>>()
+    .unwrap();
+
+    txn.commit().unwrap();
+
+    let arena = Bump::new();
+    let txn = storage.graph_env.read_txn().unwrap();
+
+    // Each label queryable separately
+    let knows_edges = G::new(&storage, &txn, &arena)
+        .n_from_id(&node_a)
+        .out_e("knows")
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
+    assert_eq!(knows_edges.len(), 1);
+    if let TraversalValue::Edge(e) = &knows_edges[0] {
+        assert_eq!(e.get_property("since").unwrap(), &Value::from(2020));
+    } else {
+        panic!("Expected edge");
+    }
+
+    let likes_edges = G::new(&storage, &txn, &arena)
+        .n_from_id(&node_a)
+        .out_e("likes")
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
+    assert_eq!(likes_edges.len(), 1);
+    if let TraversalValue::Edge(e) = &likes_edges[0] {
+        assert_eq!(e.get_property("rating").unwrap(), &Value::from(5));
+    } else {
+        panic!("Expected edge");
+    }
+}
+
+#[test]
+fn test_upsert_e_persisted_after_commit() {
+    let (_temp_dir, storage) = setup_test_db();
+    let arena = Bump::new();
+    let mut txn = storage.graph_env.write_txn().unwrap();
+
+    let source_id = G::new_mut(&storage, &arena, &mut txn)
+        .add_n("person", None, None)
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap()[0]
+        .id();
+    let target_id = G::new_mut(&storage, &arena, &mut txn)
+        .add_n("person", None, None)
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap()[0]
+        .id();
+
+    let upserted = G::new_mut_from_iter(
+        &storage,
+        &mut txn,
+        std::iter::empty::<TraversalValue>(),
+        &arena,
+    )
+    .upsert_e(
+        "works_with",
+        source_id,
+        target_id,
+        &[
+            ("project", Value::from("helix")),
+            ("role", Value::from("lead")),
+        ],
+    )
+    .collect::<Result<Vec<_>, _>>()
+    .unwrap();
+    let edge_id = upserted[0].id();
+    txn.commit().unwrap();
+
+    // Fresh arena + read txn — re-read via e_from_id
+    let arena = Bump::new();
+    let txn = storage.graph_env.read_txn().unwrap();
+    let fetched = G::new(&storage, &txn, &arena)
+        .e_from_id(&edge_id)
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
+
+    assert_eq!(fetched.len(), 1);
+    if let TraversalValue::Edge(e) = &fetched[0] {
+        assert_eq!(e.id, edge_id);
+        assert_eq!(e.label, "works_with");
+        assert_eq!(e.from_node, source_id);
+        assert_eq!(e.to_node, target_id);
+        assert_eq!(
+            e.get_property("project").unwrap(),
+            &Value::from("helix")
+        );
+        assert_eq!(e.get_property("role").unwrap(), &Value::from("lead"));
+    } else {
+        panic!("Expected edge");
+    }
+}
+
+// ============================================================================
+// Node Persistence Tests
+// ============================================================================
+
+#[test]
+fn test_upsert_n_persisted_readable_via_n_from_id() {
+    let (_temp_dir, storage) = setup_test_db();
+    let arena = Bump::new();
+    let mut txn = storage.graph_env.write_txn().unwrap();
+
+    let result = G::new_mut_from_iter(
+        &storage,
+        &mut txn,
+        std::iter::empty::<TraversalValue>(),
+        &arena,
+    )
+    .upsert_n(
+        "person",
+        &[
+            ("name", Value::from("Alice")),
+            ("age", Value::from(30)),
+            ("active", Value::from(true)),
+        ],
+    )
+    .collect::<Result<Vec<_>, _>>()
+    .unwrap();
+
+    let node_id = result[0].id();
+    txn.commit().unwrap();
+
+    // Fresh arena + read txn
+    let arena = Bump::new();
+    let txn = storage.graph_env.read_txn().unwrap();
+    let fetched = G::new(&storage, &txn, &arena)
+        .n_from_id(&node_id)
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
+
+    assert_eq!(fetched.len(), 1);
+    if let TraversalValue::Node(n) = &fetched[0] {
+        assert_eq!(n.id, node_id);
+        assert_eq!(n.label, "person");
+        assert_eq!(n.get_property("name").unwrap(), &Value::from("Alice"));
+        assert_eq!(n.get_property("age").unwrap(), &Value::from(30));
+        assert_eq!(n.get_property("active").unwrap(), &Value::from(true));
+    } else {
+        panic!("Expected node");
+    }
+}
+
+#[test]
+fn test_upsert_n_updated_props_visible_via_traversal() {
+    let (_temp_dir, storage) = setup_test_db();
+    let arena = Bump::new();
+    let mut txn = storage.graph_env.write_txn().unwrap();
+
+    // Create two nodes and an edge between them
+    let node_a = G::new_mut(&storage, &arena, &mut txn)
+        .add_n(
+            "person",
+            props_option(&arena, props!("name" => "Alice")),
+            None,
+        )
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
+    let node_a_id = node_a[0].id();
+
+    let node_b_id = G::new_mut(&storage, &arena, &mut txn)
+        .add_n(
+            "person",
+            props_option(&arena, props!("name" => "Bob")),
+            None,
+        )
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap()[0]
+        .id();
+
+    G::new_mut(&storage, &arena, &mut txn)
+        .add_edge("knows", None, node_b_id, node_a_id, false, false)
+        .collect_to_obj()
+        .unwrap();
+
+    // Upsert node_a with updated props
+    G::new_mut_from_iter(&storage, &mut txn, node_a.into_iter(), &arena)
+        .upsert_n(
+            "person",
+            &[
+                ("name", Value::from("Alice Updated")),
+                ("email", Value::from("alice@example.com")),
+            ],
+        )
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
+
+    txn.commit().unwrap();
+
+    // Traverse from node_b via in_node to reach node_a — should see updated props
+    let arena = Bump::new();
+    let txn = storage.graph_env.read_txn().unwrap();
+    let reached = G::new(&storage, &txn, &arena)
+        .n_from_id(&node_b_id)
+        .out_node("knows")
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
+
+    assert_eq!(reached.len(), 1);
+    assert_eq!(reached[0].id(), node_a_id);
+    if let TraversalValue::Node(n) = &reached[0] {
+        assert_eq!(
+            n.get_property("name").unwrap(),
+            &Value::from("Alice Updated")
+        );
+        assert_eq!(
+            n.get_property("email").unwrap(),
+            &Value::from("alice@example.com")
+        );
+    } else {
+        panic!("Expected node");
+    }
+}
+
+// ============================================================================
+// Vector Persistence Tests
+// ============================================================================
+
+#[test]
+fn test_upsert_v_update_persisted_and_searchable() {
+    let (_temp_dir, storage) = setup_test_db();
+    let arena = Bump::new();
+    let mut txn = storage.graph_env.write_txn().unwrap();
+
+    // Insert initial vector
+    let initial = G::new_mut(&storage, &arena, &mut txn)
+        .insert_v::<Filter>(&[0.5, 0.6, 0.7], "embedding", None)
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
+    let vector_id = initial[0].id();
+
+    // Upsert to update props
+    G::new_mut_from_iter(&storage, &mut txn, initial.into_iter(), &arena)
+        .upsert_v(
+            &[0.5, 0.6, 0.7],
+            "embedding",
+            &[("model", Value::from("v2")), ("score", Value::from(0.95))],
+        )
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
+
+    txn.commit().unwrap();
+
+    // Fresh arena + read txn — search should still find it
+    let arena = Bump::new();
+    let txn = storage.graph_env.read_txn().unwrap();
+    let results = G::new(&storage, &txn, &arena)
+        .search_v::<Filter, _>(&[0.5, 0.6, 0.7], 10, "embedding", None)
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
+
+    assert!(!results.is_empty(), "Updated vector should be searchable");
+    assert_eq!(results[0].id(), vector_id);
+    if let TraversalValue::Vector(v) = &results[0] {
+        assert_eq!(v.get_property("model").unwrap(), &Value::from("v2"));
+        assert_eq!(v.get_property("score").unwrap(), &Value::from(0.95));
+    } else {
+        panic!("Expected vector");
+    }
+}
+
+#[test]
+fn test_upsert_v_multiple_sequential_upserts() {
+    let (_temp_dir, storage) = setup_test_db();
+    let arena = Bump::new();
+    let mut txn = storage.graph_env.write_txn().unwrap();
+
+    // Insert initial vector with props
+    let v1 = G::new_mut(&storage, &arena, &mut txn)
+        .insert_v::<Filter>(
+            &[0.1, 0.2, 0.3],
+            "embedding",
+            props_option(&arena, props!("model" => "v1", "dim" => 3)),
+        )
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
+    let vector_id = v1[0].id();
+
+    // First upsert: update "model", add "source"
+    let v2 = G::new_mut_from_iter(&storage, &mut txn, v1.into_iter(), &arena)
+        .upsert_v(
+            &[0.1, 0.2, 0.3],
+            "embedding",
+            &[
+                ("model", Value::from("v2")),
+                ("source", Value::from("openai")),
+            ],
+        )
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
+    assert_eq!(v2[0].id(), vector_id, "ID should be stable across upserts");
+
+    // Second upsert: overwrite "source", add "timestamp"
+    let v3 = G::new_mut_from_iter(&storage, &mut txn, v2.into_iter(), &arena)
+        .upsert_v(
+            &[0.1, 0.2, 0.3],
+            "embedding",
+            &[
+                ("source", Value::from("anthropic")),
+                ("timestamp", Value::from(1700000000)),
+            ],
+        )
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
+    assert_eq!(v3[0].id(), vector_id, "ID should be stable across upserts");
+
+    // Verify accumulated properties
+    if let TraversalValue::Vector(v) = &v3[0] {
+        assert_eq!(v.get_property("model").unwrap(), &Value::from("v2")); // from first upsert
+        assert_eq!(v.get_property("dim").unwrap(), &Value::from(3)); // from insert (preserved)
+        assert_eq!(
+            v.get_property("source").unwrap(),
+            &Value::from("anthropic")
+        ); // overwritten
+        assert_eq!(
+            v.get_property("timestamp").unwrap(),
+            &Value::from(1700000000)
+        ); // added
+    } else {
+        panic!("Expected vector");
+    }
+
+    txn.commit().unwrap();
+}
+
+// ============================================================================
+// Cross-Type Test
+// ============================================================================
+
+#[test]
+fn test_upsert_e_between_different_node_labels() {
+    let (_temp_dir, storage) = setup_test_db();
+    let arena = Bump::new();
+    let mut txn = storage.graph_env.write_txn().unwrap();
+
+    let person_id = G::new_mut(&storage, &arena, &mut txn)
+        .add_n(
+            "person",
+            props_option(&arena, props!("name" => "Alice")),
+            None,
+        )
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap()[0]
+        .id();
+    let company_id = G::new_mut(&storage, &arena, &mut txn)
+        .add_n(
+            "company",
+            props_option(&arena, props!("name" => "Helix Corp")),
+            None,
+        )
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap()[0]
+        .id();
+
+    // Upsert edge person -> company
+    G::new_mut_from_iter(
+        &storage,
+        &mut txn,
+        std::iter::empty::<TraversalValue>(),
+        &arena,
+    )
+    .upsert_e(
+        "works_at",
+        person_id,
+        company_id,
+        &[("role", Value::from("engineer")), ("since", Value::from(2023))],
+    )
+    .collect::<Result<Vec<_>, _>>()
+    .unwrap();
+
+    txn.commit().unwrap();
+
+    let arena = Bump::new();
+    let txn = storage.graph_env.read_txn().unwrap();
+
+    // out_node from person reaches company
+    let out_nodes = G::new(&storage, &txn, &arena)
+        .n_from_id(&person_id)
+        .out_node("works_at")
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
+    assert_eq!(out_nodes.len(), 1);
+    assert_eq!(out_nodes[0].id(), company_id);
+    if let TraversalValue::Node(n) = &out_nodes[0] {
+        assert_eq!(n.label, "company");
+        assert_eq!(n.get_property("name").unwrap(), &Value::from("Helix Corp"));
+    } else {
+        panic!("Expected node");
+    }
+
+    // in_node from company reaches person
+    let in_nodes = G::new(&storage, &txn, &arena)
+        .n_from_id(&company_id)
+        .in_node("works_at")
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
+    assert_eq!(in_nodes.len(), 1);
+    assert_eq!(in_nodes[0].id(), person_id);
+    if let TraversalValue::Node(n) = &in_nodes[0] {
+        assert_eq!(n.label, "person");
+    } else {
+        panic!("Expected node");
+    }
+
+    // out_e has correct props
+    let out_edges = G::new(&storage, &txn, &arena)
+        .n_from_id(&person_id)
+        .out_e("works_at")
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
+    assert_eq!(out_edges.len(), 1);
+    if let TraversalValue::Edge(e) = &out_edges[0] {
+        assert_eq!(e.from_node, person_id);
+        assert_eq!(e.to_node, company_id);
+        assert_eq!(e.get_property("role").unwrap(), &Value::from("engineer"));
+        assert_eq!(e.get_property("since").unwrap(), &Value::from(2023));
+    } else {
+        panic!("Expected edge");
+    }
 }

@@ -180,7 +180,7 @@ impl<'a> DockerManager<'a> {
         let workspace = self.project.instance_workspace(instance_name);
         let project_name = self.compose_project_name(instance_name);
 
-        let mut full_args = vec!["--project-name", &project_name];
+        let mut full_args = vec!["-p", &project_name];
         full_args.extend(args);
 
         let output = Command::new(self.runtime.binary())
@@ -707,11 +707,11 @@ networks:
     /// Check if an instance container exists (running or stopped)
     pub fn instance_exists(&self, instance_name: &str) -> Result<bool> {
         let statuses = self.get_project_status()?;
-        let target_container_name = format!("helix_{instance_name}_app");
+        let target_container_name = self.container_name(instance_name);
 
         Ok(statuses
             .iter()
-            .any(|status| status.container_name.contains(&target_container_name)))
+            .any(|status| status.container_name == target_container_name))
     }
 
     /// Get status of all Docker/Podman containers for this project
