@@ -91,3 +91,7 @@ production = ["api-key","server"]
 [[test]]
 name = "capacity_optimization_benches"
 path = "benches/capacity_optimization_benches.rs"
+
+[[test]]
+name = "vault_scale_benches"
+path = "benches/vault_scale_benches.rs"
