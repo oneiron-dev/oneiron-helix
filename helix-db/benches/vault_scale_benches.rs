@@ -16,6 +16,7 @@ mod tests {
                 hnsw::HNSW,
                 vector::HVector,
                 vector_core::{HNSWConfig, VectorCore},
+                vector_distance::cosine_similarity,
             },
         },
         utils::id::v6_uuid,
@@ -200,55 +201,34 @@ mod tests {
         query_vectors: &[(usize, Vec<f64>)],
         k: usize,
     ) -> HashMap<usize, Vec<u128>> {
-        let base_vectors = Arc::new(base_vectors.to_vec());
-        let results = Arc::new(Mutex::new(HashMap::new()));
+        let results = Mutex::new(HashMap::new());
         let chunk_size = (query_vectors.len() + num_cpus::get() - 1) / num_cpus::get();
 
-        let handles: Vec<_> = query_vectors
-            .chunks(chunk_size)
-            .map(|chunk| {
-                let base_vectors = Arc::clone(&base_vectors);
-                let results = Arc::clone(&results);
-                let chunk = chunk.to_vec();
-
-                thread::spawn(move || {
-                    let local_results: HashMap<usize, Vec<u128>> = chunk
-                        .into_iter()
-                        .map(|(query_id, query_vec)| {
-                            let arena = Bump::new();
-                            let q_data = arena.alloc_slice_copy(&query_vec);
-                            let query_hvec = HVector::from_slice("vector", 0, q_data);
-
-                            let mut distances: Vec<(u128, f64)> = base_vectors
+        thread::scope(|s| {
+            for chunk in query_vectors.chunks(chunk_size) {
+                s.spawn(|| {
+                    let local: HashMap<usize, Vec<u128>> = chunk
+                        .iter()
+                        .map(|(qid, qvec)| {
+                            let mut dists: Vec<(u128, f64)> = base_vectors
                                 .iter()
                                 .map(|(id, data)| {
-                                    let b_data = arena.alloc_slice_copy(data.as_slice());
-                                    let base_hvec = HVector::from_slice("vector", 0, b_data);
-                                    let dist = query_hvec.distance_to(&base_hvec).unwrap_or(f64::MAX);
-                                    (*id, dist)
+                                    let sim = cosine_similarity(qvec, data).unwrap_or(-1.0);
+                                    (*id, 1.0 - sim)
                                 })
                                 .collect();
-
-                            distances.sort_by(|a, b| {
+                            dists.sort_by(|a, b| {
                                 a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal)
                             });
-
-                            let top_k: Vec<u128> =
-                                distances.into_iter().take(k).map(|(id, _)| id).collect();
-                            (query_id, top_k)
+                            (*qid, dists.into_iter().take(k).map(|(id, _)| id).collect())
                         })
                         .collect();
+                    results.lock().unwrap().extend(local);
+                });
+            }
+        });
 
-                    results.lock().unwrap().extend(local_results);
-                })
-            })
-            .collect();
-
-        for handle in handles {
-            handle.join().unwrap();
-        }
-
-        Arc::try_unwrap(results).unwrap().into_inner().unwrap()
+        results.into_inner().unwrap()
     }
 
     // ─── Environment helpers ─────────────────────────────────────────────────
@@ -267,6 +247,10 @@ mod tests {
         };
 
         (env, temp_dir)
+    }
+
+    fn map_size_for_bm25(n_docs: usize) -> usize {
+        ((n_docs * 3000) / (1024 * 1024)).max(64) + 64
     }
 
     fn map_size_for_vectors(n_docs: usize, dim: usize) -> usize {
@@ -314,7 +298,7 @@ mod tests {
 
     // ─── Batch insert helpers ────────────────────────────────────────────────
 
-    const BATCH_SIZE: usize = 10_000;
+    const BATCH_SIZE: usize = 500;
 
     fn insert_vectors_batched(
         env: &Env,
@@ -328,10 +312,11 @@ mod tests {
 
         while batch_start < total {
             let batch_end = (batch_start + BATCH_SIZE).min(total);
-            let arena = Bump::new();
             let mut txn = env.write_txn().unwrap();
 
+            let mut arena = Bump::new();
             for vec_data in &vecs[batch_start..batch_end] {
+                arena.reset();
                 let data = arena.alloc_slice_copy(vec_data.as_slice());
                 let label: &str = arena.alloc_str("vector");
                 let hvec = index
@@ -349,6 +334,38 @@ mod tests {
         }
 
         inserted
+    }
+
+    fn insert_vectors_batched_no_gt(
+        env: &Env,
+        index: &VectorCore,
+        vecs: &[Vec<f64>],
+        test_name: &str,
+    ) {
+        let mut batch_start = 0;
+        let total = vecs.len();
+
+        while batch_start < total {
+            let batch_end = (batch_start + BATCH_SIZE).min(total);
+            let mut txn = env.write_txn().unwrap();
+
+            let mut arena = Bump::new();
+            for vec_data in &vecs[batch_start..batch_end] {
+                arena.reset();
+                let data = arena.alloc_slice_copy(vec_data.as_slice());
+                let label: &str = arena.alloc_str("vector");
+                let _ = index
+                    .insert::<Filter>(&mut txn, label, data, None, &arena)
+                    .unwrap();
+            }
+
+            txn.commit().unwrap();
+            eprintln!(
+                "[{test_name}]   inserted {batch_end}/{total} vectors (RSS: {:.0}MB)",
+                process_rss_mb()
+            );
+            batch_start = batch_end;
+        }
     }
 
     fn insert_bm25_batched(
@@ -401,7 +418,7 @@ mod tests {
 
             phase(test, &format!("generating {n} vectors ({dim}d)"));
             let vecs = gen_sim_vecs(n, dim, 0.3);
-            let queries = gen_query_vecs(&vecs, n_queries, 0.05);
+            let queries = gen_query_vecs(&vecs, n_queries + n_warmup, 0.05);
 
             let map_mb = map_size_for_vectors(n, dim);
             phase(test, &format!("creating LMDB env ({map_mb}MB map)"));
@@ -418,7 +435,7 @@ mod tests {
             phase(test, &format!("insert done in {:.1}s", insert_elapsed.as_secs_f64()));
 
             phase(test, &format!("computing ground truth ({n_gt_queries} queries × {n} vecs)"));
-            let gt_queries: Vec<(usize, Vec<f64>)> = queries[..n_gt_queries]
+            let gt_queries: Vec<(usize, Vec<f64>)> = queries[n_warmup..n_warmup + n_gt_queries]
                 .iter()
                 .enumerate()
                 .map(|(i, q)| (i, q.clone()))
@@ -427,7 +444,7 @@ mod tests {
             let ground_truths = calc_ground_truths(&inserted, &gt_queries, k);
             phase(test, &format!("ground truth done in {:.1}s", t0.elapsed().as_secs_f64()));
 
-            drop(inserted); // free ~600MB at 100K scale
+            drop(inserted);
             drop(vecs);
             phase(test, "freed insert data");
 
@@ -445,7 +462,7 @@ mod tests {
             for i in 0..n_queries {
                 let arena = Bump::new();
                 let txn = env.read_txn().unwrap();
-                let q = arena.alloc_slice_copy(queries[i].as_slice());
+                let q = arena.alloc_slice_copy(queries[n_warmup + i].as_slice());
                 let label: &str = arena.alloc_str("vector");
 
                 let start = Instant::now();
@@ -514,7 +531,7 @@ mod tests {
             let docs = gen_bm25_docs(n);
             let queries = gen_bm25_queries(n_queries + n_warmup);
 
-            let map_mb = (n / 5).max(64) + 64; // BM25 text is lighter than vectors
+            let map_mb = map_size_for_bm25(n);
             phase(test, &format!("creating LMDB env ({map_mb}MB map)"));
             let (env, temp_dir) = setup_temp_env(map_mb);
             let mut wtxn = env.write_txn().unwrap();
@@ -599,11 +616,11 @@ mod tests {
                 )
                 .unwrap();
                 txn.commit().unwrap();
-                insert_vectors_batched(&vec_env, &index, &vecs, test);
+                insert_vectors_batched_no_gt(&vec_env, &index, &vecs, test);
             }
             drop(vecs);
 
-            let bm25_map_mb = (n / 5).max(64) + 64;
+            let bm25_map_mb = map_size_for_bm25(n);
             phase(test, &format!("setting up BM25 index ({bm25_map_mb}MB map)"));
             let (bm25_env, _bm25_dir) = setup_temp_env(bm25_map_mb);
             let bm25 = {
@@ -716,10 +733,10 @@ mod tests {
             let vec_index =
                 VectorCore::new(&vec_env, &mut txn, HNSWConfig::new(None, None, None)).unwrap();
             txn.commit().unwrap();
-            insert_vectors_batched(&vec_env, &vec_index, &vecs, test);
+            let inserted_vecs = insert_vectors_batched(&vec_env, &vec_index, &vecs, test);
             drop(vecs);
 
-            let bm25_map_mb = (n / 5).max(64) + 64;
+            let bm25_map_mb = map_size_for_bm25(n);
             phase(test, &format!("setting up BM25 index ({bm25_map_mb}MB map)"));
             let (bm25_env, _bm25_dir) = setup_temp_env(bm25_map_mb);
             let bm25 = {
@@ -730,7 +747,9 @@ mod tests {
                 bm25
             };
 
-            let universe: HashSet<u128> = bm25_docs.iter().map(|(id, _)| *id).collect();
+            let mut universe: HashSet<u128> = bm25_docs.iter().map(|(id, _)| *id).collect();
+            universe.extend(inserted_vecs.iter().map(|(id, _)| *id));
+            drop(inserted_vecs);
 
             phase(test, &format!("running {n_queries} timed pipeline queries"));
             let mut collector = LatencyCollector::with_capacity(n_queries);
@@ -795,26 +814,36 @@ mod tests {
         println!("\n=== Concurrent Vaults — {} vaults x {}K docs ===", n_vaults, docs_per_vault / 1000);
         phase(test, &format!("will create {n_vaults} vaults with {docs_per_vault} docs each"));
 
-        let mut vault_envs: Vec<(Env, tempfile::TempDir)> = Vec::new();
-        let mut vault_queries: Vec<Vec<Vec<f64>>> = Vec::new();
+        let vault_data: Vec<((Env, tempfile::TempDir), Vec<Vec<f64>>)> =
+            thread::scope(|s| {
+                let handles: Vec<_> = (0..n_vaults)
+                    .map(|i| {
+                        s.spawn(move || {
+                            phase(test, &format!("populating vault {i}"));
+                            let vecs = gen_sim_vecs(docs_per_vault, dim, 0.3);
+                            let queries = gen_query_vecs(&vecs, 2_000, 0.05);
 
-        for i in 0..n_vaults {
-            phase(test, &format!("populating vault {i}"));
-            let vecs = gen_sim_vecs(docs_per_vault, dim, 0.3);
-            vault_queries.push(gen_query_vecs(&vecs, 2_000, 0.05));
+                            let map_mb = map_size_for_vectors(docs_per_vault, dim);
+                            let (env, dir) = setup_temp_env(map_mb);
+                            let mut txn = env.write_txn().unwrap();
+                            let index = VectorCore::new(
+                                &env,
+                                &mut txn,
+                                HNSWConfig::new(None, None, None),
+                            )
+                            .unwrap();
+                            txn.commit().unwrap();
+                            insert_vectors_batched_no_gt(&env, &index, &vecs, test);
+                            phase(test, &format!("vault {i} ready"));
+                            ((env, dir), queries)
+                        })
+                    })
+                    .collect();
+                handles.into_iter().map(|h| h.join().unwrap()).collect()
+            });
 
-            let map_mb = map_size_for_vectors(docs_per_vault, dim);
-            let (env, dir) = setup_temp_env(map_mb);
-            let mut txn = env.write_txn().unwrap();
-            let index =
-                VectorCore::new(&env, &mut txn, HNSWConfig::new(None, None, None)).unwrap();
-            txn.commit().unwrap();
-            insert_vectors_batched(&env, &index, &vecs, test);
-            vault_envs.push((env, dir));
-            drop(vecs);
-
-            phase(test, &format!("vault {i} ready"));
-        }
+        let (vault_envs, vault_queries): (Vec<_>, Vec<_>) =
+            vault_data.into_iter().unzip();
 
         phase(test, &format!("starting {duration_secs}s concurrent query phase"));
 
@@ -900,11 +929,12 @@ mod tests {
         let dim = 768;
         let k = 10;
         let n_queries = 1_000;
+        let n_warmup = 100;
         let n_gt_queries = 100;
 
         phase(test, &format!("generating {n} vectors ({dim}d)"));
         let vecs = gen_sim_vecs(n, dim, 0.3);
-        let queries = gen_query_vecs(&vecs, n_queries, 0.05);
+        let queries = gen_query_vecs(&vecs, n_queries + n_warmup, 0.05);
 
         println!("\n=== ef Comparison at 50K docs ===");
         println!(
@@ -928,7 +958,7 @@ mod tests {
             let inserted = insert_vectors_batched(&env, &index, &vecs, test);
 
             phase(test, "computing ground truth");
-            let gt_queries: Vec<(usize, Vec<f64>)> = queries[..n_gt_queries]
+            let gt_queries: Vec<(usize, Vec<f64>)> = queries[n_warmup..n_warmup + n_gt_queries]
                 .iter()
                 .enumerate()
                 .map(|(i, q)| (i, q.clone()))
@@ -937,7 +967,7 @@ mod tests {
             drop(inserted);
 
             phase(test, "warmup");
-            for i in 0..100 {
+            for i in 0..n_warmup {
                 let arena = Bump::new();
                 let txn = env.read_txn().unwrap();
                 let q = arena.alloc_slice_copy(queries[i].as_slice());
@@ -950,7 +980,7 @@ mod tests {
             for i in 0..n_queries {
                 let arena = Bump::new();
                 let txn = env.read_txn().unwrap();
-                let q = arena.alloc_slice_copy(queries[i].as_slice());
+                let q = arena.alloc_slice_copy(queries[n_warmup + i].as_slice());
                 let label: &str = arena.alloc_str("vector");
 
                 let start = Instant::now();
